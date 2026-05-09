@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -141,4 +142,141 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+}
+
+/* ===== MANIFOLD design tokens ===== */
+:root {
+  --manifold-bg: #000000;
+  --manifold-cyan: #00ffff;
+  --manifold-orange: #ff6b35;
+  --manifold-panel: rgba(5, 10, 20, 0.85);
+  --manifold-panel-border: rgba(0, 255, 255, 0.35);
+  --manifold-text-dim: rgba(180, 200, 220, 0.55);
+  --manifold-text-faint: rgba(180, 200, 220, 0.35);
+  --font-mono: "Space Mono", ui-monospace, monospace;
+  --font-ui: "Outfit", ui-sans-serif, system-ui, sans-serif;
+}
+
+.manifold-root {
+  font-family: var(--font-ui);
+  color: #d6e4f0;
+  background: var(--manifold-bg);
+}
+
+.manifold-mono { font-family: var(--font-mono); }
+
+.manifold-panel {
+  background: var(--manifold-panel);
+  border: 1px solid var(--manifold-panel-border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.manifold-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid transparent;
+  background: linear-gradient(120deg, transparent 30%, rgba(0,255,255,0.25) 50%, transparent 70%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  background-size: 200% 200%;
+  animation: manifold-shimmer 6s linear infinite;
+  opacity: 0.8;
+}
+
+@keyframes manifold-shimmer {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+
+@keyframes manifold-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(0,255,255,0.7); opacity: 1; }
+  70%  { box-shadow: 0 0 0 10px rgba(0,255,255,0); opacity: 0.6; }
+  100% { box-shadow: 0 0 0 0 rgba(0,255,255,0); opacity: 1; }
+}
+
+@keyframes manifold-pulse-slow {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.9; }
+}
+
+@keyframes manifold-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.manifold-fade-in    { animation: manifold-fade-up 0.7s ease-out both; }
+.manifold-delay-1    { animation-delay: 0.15s; }
+.manifold-delay-2    { animation-delay: 0.3s; }
+.manifold-delay-3    { animation-delay: 0.45s; }
+
+.manifold-pulse-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--manifold-cyan);
+  animation: manifold-pulse 1.8s ease-out infinite;
+}
+.manifold-pulse-dot.thinking {
+  animation: manifold-pulse-slow 1.4s ease-in-out infinite;
+}
+
+.manifold-input {
+  background: rgba(0, 8, 14, 0.9);
+  border: 1px solid var(--manifold-panel-border);
+  color: var(--manifold-cyan);
+  font-family: var(--font-mono);
+  caret-color: var(--manifold-cyan);
+  outline: none;
+}
+.manifold-input::placeholder { color: rgba(0,255,255,0.35); }
+.manifold-input:focus { border-color: var(--manifold-cyan); box-shadow: 0 0 12px rgba(0,255,255,0.25); }
+
+.manifold-flash { animation: manifold-flash 0.4s ease-out; }
+@keyframes manifold-flash {
+  0%   { box-shadow: 0 0 24px rgba(0,255,255,0.7); border-color: var(--manifold-cyan); }
+  100% { box-shadow: 0 0 12px rgba(0,255,255,0.15); }
+}
+
+.manifold-icon-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid rgba(0,255,255,0.25);
+  color: var(--manifold-cyan); padding: 6px 8px;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s ease;
+}
+.manifold-icon-btn:hover {
+  background: rgba(0,255,255,0.08);
+  border-color: var(--manifold-cyan);
+  box-shadow: 0 0 10px rgba(0,255,255,0.3);
+}
+
+.manifold-suggestion {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--manifold-text-dim); cursor: pointer;
+  font-family: var(--font-mono); font-size: 12px;
+  transition: color 0.2s ease;
+  background: none; border: none; padding: 0; text-align: left;
+}
+.manifold-suggestion .arrow { transition: transform 0.2s ease; color: var(--manifold-orange); }
+.manifold-suggestion:hover { color: #e8f6ff; }
+.manifold-suggestion:hover .arrow { transform: translateX(4px); }
+
+.manifold-send-btn {
+  background: transparent; border: none; color: var(--manifold-cyan);
+  cursor: pointer; padding: 4px 8px;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+.manifold-send-btn:hover { filter: drop-shadow(0 0 6px var(--manifold-cyan)); transform: translateX(2px); }
+.manifold-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+#scene-container {
+  position: absolute; inset: 0;
+  width: 100vw; height: 100vh;
+  z-index: 0; background: #000;
 }
