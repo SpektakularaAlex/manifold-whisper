@@ -1,0 +1,42 @@
+import { RotateCcw, Trash2, Info } from "lucide-react";
+
+interface SceneControlsProps {
+  onResetCamera: () => void;
+  onClearTrajectories: () => void;
+  onToggleLabels: () => void;
+}
+
+export function SceneControls({ onResetCamera, onClearTrajectories, onToggleLabels }: SceneControlsProps) {
+  return (
+    <div
+      className="manifold-panel manifold-fade-in manifold-delay-2"
+      style={{
+        position: "absolute",
+        top: 24,
+        right: 24,
+        width: 180,
+        padding: "14px 14px",
+        zIndex: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div
+        className="manifold-mono"
+        style={{ color: "var(--manifold-cyan)", fontSize: 10, letterSpacing: "0.3em" }}
+      >
+        SCENE
+      </div>
+      <button className="manifold-icon-btn" onClick={onResetCamera}>
+        <RotateCcw size={12} /> <span>Reset Camera</span>
+      </button>
+      <button className="manifold-icon-btn" onClick={onClearTrajectories}>
+        <Trash2 size={12} /> <span>Clear Trajectories</span>
+      </button>
+      <button className="manifold-icon-btn" onClick={onToggleLabels}>
+        <Info size={12} /> <span>Toggle Labels</span>
+      </button>
+    </div>
+  );
+}
