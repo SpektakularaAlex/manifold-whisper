@@ -8,8 +8,10 @@ import { SceneControls } from "@/components/manifold/SceneControls";
 import { TrajectoryInfoPanel } from "@/components/manifold/TrajectoryInfoPanel";
 import { MissionPanel, type MissionLeg } from "@/components/manifold/MissionPanel";
 import { FamilyBrowserPanel } from "@/components/manifold/FamilyBrowserPanel";
+import { TransferPlannerPanel, type TransferResult } from "@/components/manifold/TransferPlannerPanel";
+import { FamilyControlsBar } from "@/components/manifold/FamilyControlsBar";
 import { useAgent } from "@/hooks/useAgent";
-import { executeCommand } from "@/utils/sceneCommands";
+import { executeCommand, type FamilyShownMeta } from "@/utils/sceneCommands";
 import type { AgentCommand } from "@/hooks/useAgent";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
@@ -37,6 +39,10 @@ function Index() {
   const [missionLegs, setMissionLegs] = useState<MissionLeg[]>([]);
   const [missionDuration, setMissionDuration] = useState(0);
   const [missionActive, setMissionActive] = useState(false);
+  const [plannerActive, setPlannerActive] = useState(false);
+  const [plannerDep, setPlannerDep] = useState<TrajectoryMeta | null>(null);
+  const [plannerArr, setPlannerArr] = useState<TrajectoryMeta | null>(null);
+  const [activeControlFamily, setActiveControlFamily] = useState<FamilyShownMeta | null>(null);
   const { submit, isThinking, explanation, suggestedNext } = useAgent();
 
   const handleSubmit = useCallback(async (message: string) => {
@@ -44,7 +50,7 @@ function Index() {
     const commands = await submit(message);
     if (!sceneRef.current) return;
     for (const cmd of commands) {
-      executeCommand(cmd, sceneRef.current);
+      executeCommand(cmd, sceneRef.current, setActiveControlFamily);
       _extractMission(cmd, setMissionLegs, setMissionDuration, setMissionActive);
     }
   }, [submit]);
@@ -87,6 +93,36 @@ function Index() {
     void handleShowManifolds(familyKey, meta.orbitIndex ?? 0);
   }, [handleShowManifolds]);
 
+  // Routes orbit clicks: if planner is active, assign departure/arrival; otherwise show info panel
+  const handleOrbitClick = useCallback((meta: TrajectoryMeta) => {
+    if (plannerActive) {
+      if (!plannerDep) {
+        setPlannerDep(meta);
+        sceneRef.current?.setMissionSelectHighlight([meta.id ?? ""]);
+      } else if (!plannerArr) {
+        setPlannerArr(meta);
+        sceneRef.current?.setMissionSelectHighlight(
+          [plannerDep.id ?? "", meta.id ?? ""].filter(Boolean),
+        );
+      }
+      return;
+    }
+    setSelectedTrajectory(meta);
+  }, [plannerActive, plannerDep, plannerArr]);
+
+  // Renders transfer result segments and animates spacecraft
+  const handleTransferResult = useCallback((result: TransferResult) => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.clearTrajectories();
+    for (const seg of result.segments) {
+      scene.addTrajectory(seg.trajectory, seg.color, seg.label, {});
+    }
+    if (result.total_trajectory.length > 0) {
+      scene.animateSpacecraft(result.total_trajectory, result.total_duration_tu);
+    }
+  }, []);
+
   void labelsVisible;
 
   return (
@@ -99,7 +135,7 @@ function Index() {
           (sceneRef as React.MutableRefObject<SceneAPI | null>).current = api;
           if (api && !sceneAPI) setSceneAPI(api);
         }}
-        onTrajectoryClick={setSelectedTrajectory}
+        onTrajectoryClick={handleOrbitClick}
       />
 
       <InfoPanel
@@ -146,6 +182,39 @@ function Index() {
           onClose={() => setMissionActive(false)}
         />
       )}
+
+      {activeControlFamily && (
+        <FamilyControlsBar
+          familyMeta={activeControlFamily}
+          scene={sceneAPI}
+          onShowManifolds={(familyKey, orbitIndex) => void handleShowManifolds(familyKey, orbitIndex)}
+          onClose={() => setActiveControlFamily(null)}
+        />
+      )}
+
+      <TransferPlannerPanel
+        active={plannerActive}
+        departure={plannerDep}
+        arrival={plannerArr}
+        onActivate={() => {
+          setPlannerActive(true);
+          setPlannerDep(null);
+          setPlannerArr(null);
+          setSelectedTrajectory(null);
+        }}
+        onDeactivate={() => {
+          setPlannerActive(false);
+          setPlannerDep(null);
+          setPlannerArr(null);
+          sceneRef.current?.setMissionSelectHighlight([]);
+        }}
+        onClearSelection={() => {
+          setPlannerDep(null);
+          setPlannerArr(null);
+          sceneRef.current?.setMissionSelectHighlight([]);
+        }}
+        onTransferResult={handleTransferResult}
+      />
     </main>
   );
 }

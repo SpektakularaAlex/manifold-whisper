@@ -43,6 +43,7 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [families, setFamilies] = useState<Record<string, FamilyMeta> | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [activeFamilies, setActiveFamilies] = useState<Set<string>>(new Set());
   const [nOrbits, setNOrbits] = useState(20);
   const [loading, setLoading] = useState(false);
   const [loadedFamilyKey, setLoadedFamilyKey] = useState<string | null>(null);
@@ -72,9 +73,10 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
           fam.jacobi_max,
           key,
         );
+        setActiveFamilies((prev) => { const next = new Set(prev); next.add(key); return next; });
         setLoadedFamilyKey(key);
         setJacobiValue(fam.jacobi_min);
-        setHighlighted(scene.highlightByJacobi(fam.jacobi_min));
+        setHighlighted(scene.highlightByJacobi(fam.jacobi_min, key));
       } catch (err) {
         console.error("Failed to load family:", err);
       } finally {
@@ -87,9 +89,16 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
   const handleCardClick = useCallback(
     (key: string) => {
       setSelected(key);
-      void loadFamily(key, nOrbits);
+      if (activeFamilies.has(key)) {
+        // Toggle off: remove from scene
+        scene?.clearFamily(key);
+        setActiveFamilies((prev) => { const next = new Set(prev); next.delete(key); return next; });
+        if (loadedFamilyKey === key) setLoadedFamilyKey(null);
+      } else {
+        void loadFamily(key, nOrbits);
+      }
     },
-    [loadFamily, nOrbits],
+    [loadFamily, nOrbits, scene, activeFamilies, loadedFamilyKey],
   );
 
   const handleNChange = useCallback(
@@ -103,9 +112,9 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
   const handleJacobiSlider = useCallback(
     (v: number) => {
       setJacobiValue(v);
-      if (scene) setHighlighted(scene.highlightByJacobi(v));
+      if (scene) setHighlighted(scene.highlightByJacobi(v, selected ?? undefined));
     },
-    [scene],
+    [scene, selected],
   );
 
   const handleShowManifolds = useCallback(() => {
@@ -185,8 +194,12 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
                 onClick={() => handleCardClick(key)}
                 style={{
                   padding: "8px 10px",
-                  background: selected === key ? hexToRgba(fam.color, 0.15) : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${selected === key ? fam.color + "66" : "rgba(255,255,255,0.08)"}`,
+                  background: activeFamilies.has(key) ? hexToRgba(fam.color, 0.15) : "rgba(255,255,255,0.03)",
+                  border: activeFamilies.has(key)
+                    ? `2px solid ${fam.color}`
+                    : selected === key
+                      ? `1px solid ${fam.color}66`
+                      : "1px solid rgba(255,255,255,0.08)",
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "flex-start",

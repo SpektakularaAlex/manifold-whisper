@@ -154,6 +154,12 @@ class ManifoldRequest(BaseModel):
 class MissionRequest(BaseModel):
     legs: list[dict]
 
+class TransferRequest(BaseModel):
+    departure_family_key: str
+    departure_orbit_index: int = 0
+    arrival_family_key: str
+    arrival_orbit_index: int = 0
+
 
 # ── /health ───────────────────────────────────────────────────────────────────
 
@@ -226,6 +232,37 @@ async def family_endpoint(
 
 
 # ── Internal helpers (run blocking scipy in thread pool) ──────────────────────
+
+def _compute_family_sync(family_key: str, n: int) -> dict:
+    ics = ic_cache.IC_CACHE.get(family_key)
+    if not ics:
+        raise KeyError(f"Family '{family_key}' not found in cache.")
+    total   = len(ics)
+    indices = [int(i * total / n) for i in range(n)] if total >= n else list(range(total))
+    orbits  = []
+    for idx in indices:
+        ic   = ics[idx]
+        traj = cr3bp.propagate(ic["state"], 2.0 * ic["period"], n_points=300)
+        xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in traj]
+        orbits.append({
+            "trajectory":  xyz,
+            "jacobi":      ic["jacobi"],
+            "period_tu":   ic["period"],
+            "period_days": ic.get("period_days", ic["period"] * 4.3425),
+            "stability":   ic["stability"],
+            "index":       idx,
+        })
+    fam_meta = FAMILY_META.get(family_key, {"label": family_key, "color": "#AAAAAA"})
+    jacobis  = [ic["jacobi"] for ic in ics]
+    return {
+        "family_key": family_key,
+        "label":      fam_meta["label"],
+        "color":      fam_meta["color"],
+        "jacobi_min": min(jacobis),
+        "jacobi_max": max(jacobis),
+        "orbits":     orbits,
+    }
+
 
 def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index: int) -> dict:
     ic  = ic_cache.get_ic(family, libr, branch, index)
@@ -320,6 +357,29 @@ async def mission_endpoint(req: MissionRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ── /transfer ─────────────────────────────────────────────────────────────────
+
+@app.post("/transfer")
+async def transfer_endpoint(req: TransferRequest):
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            mission_mod.compute_transfer,
+            req.departure_family_key,
+            req.departure_orbit_index,
+            req.arrival_family_key,
+            req.arrival_orbit_index,
+        )
+        return result
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Transfer computation failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── /agent ────────────────────────────────────────────────────────────────────
 
 @app.post("/agent")
@@ -337,7 +397,13 @@ async def agent_endpoint(req: AgentRequest):
         action = cmd.get("action", "")
         params = cmd.get("params", {})
 
-        if action == "show_orbit":
+        if action == "show_family":
+            family_key = params.get("family_key", "")
+            n          = max(1, min(100, int(params.get("n", 20))))
+            logger.info("show_family: key=%r n=%d", family_key, n)
+            compute_tasks.append(("family", cmd, family_key, n))
+
+        elif action == "show_orbit":
             family = params.get("family", "lyapunov")
             libr   = params.get("libr")
             index  = params.get("index", 0)
@@ -373,7 +439,13 @@ async def agent_endpoint(req: AgentRequest):
         kind = task[0]
         cmd  = task[1]
 
-        if kind == "orbit":
+        if kind == "family":
+            _, _, family_key, n = task
+            fut = loop.run_in_executor(None, _compute_family_sync, family_key, n)
+            futures.append(fut)
+            task_meta.append(("family", cmd, None))
+
+        elif kind == "orbit":
             _, _, fam, lib, branch, index = task
             fut = loop.run_in_executor(None, _compute_orbit_sync, fam, lib, branch, index)
             futures.append(fut)
@@ -401,6 +473,10 @@ async def agent_endpoint(req: AgentRequest):
             logger.error("Computation failed for %s: %s", cmd.get("action"), result)
             enriched = dict(cmd)
             enriched["error"] = str(result)
+            enriched_commands.append(enriched)
+        elif kind == "family":
+            enriched = dict(cmd)
+            enriched["data"] = result   # family_key, label, color, jacobi_min/max, orbits
             enriched_commands.append(enriched)
         elif kind == "orbit":
             enriched = dict(cmd)

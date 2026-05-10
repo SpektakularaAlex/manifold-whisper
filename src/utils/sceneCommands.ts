@@ -1,7 +1,20 @@
 import type { SceneAPI } from "@/hooks/useScene";
 import type { AgentCommand } from "@/hooks/useAgent";
 
-export function executeCommand(cmd: AgentCommand, scene: SceneAPI): void {
+export interface FamilyShownMeta {
+  familyKey: string;
+  label: string;
+  color: string;
+  jacobi_min: number;
+  jacobi_max: number;
+  count: number;
+}
+
+export function executeCommand(
+  cmd: AgentCommand,
+  scene: SceneAPI,
+  onFamilyShown?: (meta: FamilyShownMeta) => void,
+): void {
   const { action, data, params } = cmd;
 
   if (cmd.error) {
@@ -10,6 +23,38 @@ export function executeCommand(cmd: AgentCommand, scene: SceneAPI): void {
   }
 
   switch (action) {
+    case "show_family": {
+      if (!data?.orbits || !data.family_key) break;
+      type FamilyOrbit = {
+        trajectory: [number, number, number][];
+        jacobi: number;
+        period_tu: number;
+        period_days: number;
+        stability: number;
+        index: number;
+      };
+      const fKey = data.family_key as string;
+      const fColor = (data.color as string) ?? "#AADDFF";
+      const fMin = (data.jacobi_min as number) ?? 0;
+      const fMax = (data.jacobi_max as number) ?? 1;
+      scene.addFamilyOrbits(
+        data.orbits as FamilyOrbit[],
+        fColor,
+        fMin,
+        fMax,
+        fKey,
+      );
+      onFamilyShown?.({
+        familyKey: fKey,
+        label: (data.label as string) ?? fKey,
+        color: fColor,
+        jacobi_min: fMin,
+        jacobi_max: fMax,
+        count: (data.orbits as unknown[]).length,
+      });
+      break;
+    }
+
     case "show_orbit": {
       if (!data?.trajectory) break;
       const raw   = data.trajectory as [number, number, number][];

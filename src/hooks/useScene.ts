@@ -63,8 +63,10 @@ export interface SceneAPI {
     jacobiMax: number,
     familyKey: string,
   ): void;
-  highlightByJacobi(jacobi: number): HighlightedOrbitInfo | null;
+  clearFamily(familyKey: string): void;
+  highlightByJacobi(jacobi: number, familyKey?: string): HighlightedOrbitInfo | null;
   getMedianOrbit(): { familyKey: string; orbitIndex: number } | null;
+  setMissionSelectHighlight(selectedIds: string[]): void;
   clearTrajectories(): void;
   resetCamera(): void;
   showLagrangePoints(show: boolean): void;
@@ -122,8 +124,9 @@ export function useScene(
   const registryRef = useRef<Map<string, TrajectoryMeta>>(new Map());
   const idRef = useRef(0);
 
-  // Family orbit refs (for Jacobi slider highlighting)
+  // Family orbit refs (for Jacobi slider highlighting and mission selection)
   interface FamilyOrbitEntry {
+    id: string;
     mesh: THREE.Mesh;
     mat: THREE.MeshPhongMaterial;
     jacobi: number;
@@ -134,6 +137,9 @@ export function useScene(
     familyKey: string;
   }
   const familyOrbitsRef = useRef<FamilyOrbitEntry[]>([]);
+
+  // Currently selected mesh (click highlight)
+  const selectedMeshRef = useRef<THREE.Mesh | null>(null);
 
   // Spacecraft animation refs
   const spacecraftRef = useRef<THREE.Mesh | null>(null);
@@ -304,9 +310,27 @@ export function useScene(
       const hits = raycaster.intersectObjects(meshes, false);
       if (hits.length > 0) {
         const hitObj = hits[0].object as THREE.Mesh;
-        for (const [, meta] of registryRef.current) {
-          if (meta.object === hitObj) { onClickRef.current?.(meta); break; }
+        const hitId = hitObj.userData.id as string | undefined;
+        const meta = hitId ? registryRef.current.get(hitId) : undefined;
+
+        // Restore previous selection
+        if (selectedMeshRef.current && selectedMeshRef.current !== hitObj) {
+          const prevMesh = selectedMeshRef.current;
+          const prevMat = prevMesh.material as THREE.MeshPhongMaterial;
+          if (prevMat.emissive) prevMat.emissive.setHex(0x000000);
+          prevMat.emissiveIntensity = 0;
+          prevMat.opacity = (prevMesh.userData.restingOpacity as number | undefined) ?? 1.0;
         }
+
+        // Highlight clicked mesh
+        const mat = hitObj.material as THREE.MeshPhongMaterial;
+        if (mat.emissive) mat.emissive.setHex(0xffffff);
+        mat.emissiveIntensity = 0.4;
+        mat.opacity = 1.0;
+        if (!mat.transparent) { mat.transparent = true; }
+        selectedMeshRef.current = hitObj;
+
+        if (meta) onClickRef.current?.(meta);
       }
     }
     renderer.domElement.addEventListener("click", onCanvasClick);
@@ -432,8 +456,13 @@ export function useScene(
         curve, Math.min(points.length * 3, 600), 0.005, 6, false,
       );
       const tube = new THREE.Mesh(
-        tubeGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(color) }),
+        tubeGeo, new THREE.MeshPhongMaterial({
+          color: new THREE.Color(color),
+          emissive: new THREE.Color(0x000000),
+          emissiveIntensity: 0,
+        }),
       );
+      tube.userData = { id, restingOpacity: 1.0 };
       scene.add(tube);
       let totalLength = 0;
       for (let i = 0; i < verts.length - 1; i++) totalLength += verts[i].distanceTo(verts[i + 1]);
@@ -515,9 +544,32 @@ export function useScene(
     particleTracksRef.current.clear();
     registryRef.current.clear();
     familyOrbitsRef.current = [];
+    selectedMeshRef.current = null;
     // Stop any active spacecraft animation
     spacecraftActiveRef.current = false;
     if (spacecraftRef.current) spacecraftRef.current.visible = false;
+  }, []);
+
+  const setMissionSelectHighlight = useCallback((selectedIds: string[]) => {
+    const entries = familyOrbitsRef.current;
+    if (entries.length > 0) {
+      for (const e of entries) {
+        if (selectedIds.length === 0) {
+          e.mat.opacity = 0.7;
+        } else {
+          e.mat.opacity = selectedIds.includes(e.id) ? 1.0 : 0.15;
+        }
+      }
+    } else {
+      // Fallback for regular trajectories (non-family)
+      for (const [id, meta] of registryRef.current) {
+        const mat = meta.object.material as THREE.Material & { opacity?: number; transparent?: boolean };
+        if (mat.transparent !== undefined) {
+          mat.transparent = true;
+          mat.opacity = selectedIds.length === 0 ? 1.0 : (selectedIds.includes(id) ? 1.0 : 0.2);
+        }
+      }
+    }
   }, []);
 
   const addFamilyOrbits = useCallback(
@@ -530,23 +582,6 @@ export function useScene(
     ): void => {
       const scene = threeSceneRef.current;
       if (!scene || orbits.length === 0) return;
-
-      // Clear existing scene content first
-      trajGroupRef.current.forEach((objects) => {
-        objects.forEach((obj) => {
-          scene.remove(obj);
-          if (obj instanceof THREE.Mesh) {
-            obj.geometry.dispose();
-            (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(
-              (m) => (m as THREE.Material).dispose(),
-            );
-          }
-        });
-      });
-      trajGroupRef.current.clear();
-      particleTracksRef.current.clear();
-      registryRef.current.clear();
-      familyOrbitsRef.current = [];
 
       const base = new THREE.Color(baseColor);
       const white = new THREE.Color(0xffffff);
@@ -563,21 +598,47 @@ export function useScene(
         );
         const mat = new THREE.MeshPhongMaterial({
           color: col,
+          emissive: new THREE.Color(0x000000),
+          emissiveIntensity: 0,
           transparent: true,
           opacity: 0.7,
           depthWrite: false,
         });
         const mesh = new THREE.Mesh(geo, mat);
-        scene.add(mesh);
         const id = `family_${++idRef.current}`;
-        trajGroupRef.current.set(id, [mesh]);
-        familyOrbitsRef.current.push({
-          mesh, mat,
+        mesh.userData = {
+          id,
+          restingOpacity: 0.7,
+          familyKey,
+          orbitIndex: orb.index,
           jacobi: orb.jacobi,
           period_tu: orb.period_tu,
           period_days: orb.period_days,
           stability: orb.stability,
-          index: orb.index,
+        };
+        scene.add(mesh);
+        trajGroupRef.current.set(id, [mesh]);
+        registryRef.current.set(id, {
+          id,
+          label:      `${familyKey} · C ${orb.jacobi.toFixed(3)}`,
+          color:      `#${col.getHexString()}`,
+          familyKey,
+          family:     familyKey.split("_")[0],
+          period:     orb.period_tu,
+          periodDays: orb.period_days,
+          jacobi:     orb.jacobi,
+          stability:  orb.stability,
+          orbitIndex: orb.index,
+          pointCount: orb.trajectory.length,
+          object:     mesh,
+        });
+        familyOrbitsRef.current.push({
+          id, mesh, mat,
+          jacobi:      orb.jacobi,
+          period_tu:   orb.period_tu,
+          period_days: orb.period_days,
+          stability:   orb.stability,
+          index:       orb.index,
           familyKey,
         });
       }
@@ -585,12 +646,14 @@ export function useScene(
     [],
   );
 
-  const highlightByJacobi = useCallback((jacobi: number): HighlightedOrbitInfo | null => {
+  const highlightByJacobi = useCallback((jacobi: number, familyKey?: string): HighlightedOrbitInfo | null => {
     const entries = familyOrbitsRef.current;
     if (entries.length === 0) return null;
-    let closest = entries[0];
-    let minDiff = Math.abs(entries[0].jacobi - jacobi);
-    for (const e of entries) {
+    const pool = familyKey ? entries.filter(e => e.familyKey === familyKey) : entries;
+    if (pool.length === 0) return null;
+    let closest = pool[0];
+    let minDiff = Math.abs(pool[0].jacobi - jacobi);
+    for (const e of pool) {
       const d = Math.abs(e.jacobi - jacobi);
       if (d < minDiff) { minDiff = d; closest = e; }
     }
@@ -603,6 +666,31 @@ export function useScene(
       period_days: closest.period_days,
       stability: closest.stability,
     };
+  }, []);
+
+  const clearFamily = useCallback((familyKey: string): void => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+    const idsToRemove: string[] = [];
+    for (const [id, meta] of registryRef.current) {
+      if (meta.familyKey === familyKey) idsToRemove.push(id);
+    }
+    for (const id of idsToRemove) {
+      (trajGroupRef.current.get(id) ?? []).forEach((obj) => {
+        scene.remove(obj);
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(
+            (m) => (m as THREE.Material).dispose(),
+          );
+        }
+        if (obj === selectedMeshRef.current) selectedMeshRef.current = null;
+      });
+      trajGroupRef.current.delete(id);
+      particleTracksRef.current.delete(id);
+      registryRef.current.delete(id);
+    }
+    familyOrbitsRef.current = familyOrbitsRef.current.filter(e => e.familyKey !== familyKey);
   }, []);
 
   const getMedianOrbit = useCallback((): { familyKey: string; orbitIndex: number } | null => {
@@ -657,15 +745,18 @@ export function useScene(
       addTrajectory,
       addManifoldTubes,
       addFamilyOrbits,
+      clearFamily,
       highlightByJacobi,
       getMedianOrbit,
+      setMissionSelectHighlight,
       clearTrajectories,
       resetCamera,
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
     }),
-    [addTrajectory, addManifoldTubes, addFamilyOrbits, highlightByJacobi, getMedianOrbit,
-      clearTrajectories, resetCamera, showLagrangePoints, animateSpacecraft, stopSpacecraft],
+    [addTrajectory, addManifoldTubes, addFamilyOrbits, clearFamily, highlightByJacobi,
+      getMedianOrbit, setMissionSelectHighlight, clearTrajectories, resetCamera,
+      showLagrangePoints, animateSpacecraft, stopSpacecraft],
   );
 }
