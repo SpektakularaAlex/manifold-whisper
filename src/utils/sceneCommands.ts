@@ -27,10 +27,10 @@ export function executeCommand(cmd: AgentCommand, scene: SceneAPI): void {
     case "show_manifold": {
       type TubeArray = [number, number, number][][];
       // Backend now returns four named half-tube arrays; render each with a distinct color
-      if (data?.unstable_plus)  scene.addManifoldTubes(data.unstable_plus  as TubeArray, "#FF4444");
-      if (data?.unstable_minus) scene.addManifoldTubes(data.unstable_minus as TubeArray, "#FF8800");
-      if (data?.stable_plus)    scene.addManifoldTubes(data.stable_plus    as TubeArray, "#4488FF");
-      if (data?.stable_minus)   scene.addManifoldTubes(data.stable_minus   as TubeArray, "#00CCFF");
+      if (data?.unstable_plus)  scene.addManifoldTubes(data.unstable_plus  as TubeArray, "#FF2200");
+      if (data?.unstable_minus) scene.addManifoldTubes(data.unstable_minus as TubeArray, "#FF7700");
+      if (data?.stable_plus)    scene.addManifoldTubes(data.stable_plus    as TubeArray, "#0066FF");
+      if (data?.stable_minus)   scene.addManifoldTubes(data.stable_minus   as TubeArray, "#00BBFF");
       break;
     }
 

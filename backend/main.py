@@ -14,7 +14,7 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -81,13 +81,29 @@ def _orbit_color(agent_family: str) -> str:
 
 # ── Startup / shutdown ────────────────────────────────────────────────────────
 
+FAMILY_META: dict[str, dict[str, str]] = {
+    "halo_L1_N":   {"label": "L1 North Halo",    "color": "#FFFFFF"},
+    "halo_L1_S":   {"label": "L1 South Halo",    "color": "#DDDDDD"},
+    "halo_L2_N":   {"label": "L2 North Halo",    "color": "#AADDFF"},
+    "halo_L2_S":   {"label": "L2 South Halo",    "color": "#88BBFF"},
+    "halo_L3_N":   {"label": "L3 North Halo",    "color": "#FFAADD"},
+    "halo_L3_S":   {"label": "L3 South Halo",    "color": "#FF88BB"},
+    "lyapunov_L1": {"label": "L1 Lyapunov",      "color": "#00FFFF"},
+    "lyapunov_L2": {"label": "L2 Lyapunov",      "color": "#00DDDD"},
+    "lyapunov_L3": {"label": "L3 Lyapunov",      "color": "#00BBBB"},
+    "butterfly_N": {"label": "Butterfly North",  "color": "#FF6B35"},
+    "butterfly_S": {"label": "Butterfly South",  "color": "#FF8C5A"},
+    "dragonfly_N": {"label": "Dragonfly North",  "color": "#FFD700"},
+    "dragonfly_S": {"label": "Dragonfly South",  "color": "#FFC200"},
+}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Manifold backend...")
     logger.info("OPENAI_API_KEY present: %s", bool(os.getenv("OPENAI_API_KEY")))
 
-    await ic_cache.fetch_all_families()
-
+    # IC cache is already populated at import time via load_all_families()
     summary = ic_cache.cache_summary()
     if summary:
         logger.info("IC cache loaded:")
@@ -132,8 +148,8 @@ class ManifoldRequest(BaseModel):
     index:      int        = 0
     type:       str        = Field("unstable", pattern="^(stable|unstable|both)$")
     n_branches: int        = Field(80, ge=2, le=160)
-    t_forward:  float      = Field(8.0, gt=0.0, le=15.0)
-    t_backward: float      = Field(10.0, gt=0.0, le=15.0)
+    t_forward:  float      = Field(8.0, gt=0.0, le=50.0)
+    t_backward: float      = Field(10.0, gt=0.0, le=50.0)
 
 class MissionRequest(BaseModel):
     legs: list[dict]
@@ -144,6 +160,69 @@ class MissionRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok", "families_loaded": ic_cache.cache_summary()}
+
+
+# ── /families ─────────────────────────────────────────────────────────────────
+
+@app.get("/families")
+async def families_endpoint():
+    result: dict = {}
+    for key, ics in ic_cache.IC_CACHE.items():
+        if not ics:
+            continue
+        meta = FAMILY_META.get(key, {"label": key, "color": "#AAAAAA"})
+        jacobis     = [ic["jacobi"]    for ic in ics]
+        stabilities = [ic["stability"] for ic in ics]
+        result[key] = {
+            "count":          len(ics),
+            "label":          meta["label"],
+            "jacobi_min":     min(jacobis),
+            "jacobi_max":     max(jacobis),
+            "stability_min":  min(stabilities),
+            "stability_max":  max(stabilities),
+            "color":          meta["color"],
+        }
+    return result
+
+
+# ── /family/{family_key} ──────────────────────────────────────────────────────
+
+@app.get("/family/{family_key}")
+async def family_endpoint(
+    family_key: str,
+    n: int = Query(20, ge=1, le=100),
+):
+    ics = ic_cache.IC_CACHE.get(family_key)
+    if not ics:
+        raise HTTPException(status_code=404, detail=f"Family '{family_key}' not found")
+
+    total = len(ics)
+    indices = [int(i * total / n) for i in range(n)] if total >= n else list(range(total))
+    sampled = [(idx, ics[idx]) for idx in indices]
+
+    loop = asyncio.get_event_loop()
+
+    def _propagate_one(idx_ic: tuple[int, dict]) -> dict:
+        idx, ic = idx_ic
+        traj = cr3bp.propagate(ic["state"], 2.0 * ic["period"], n_points=300)
+        xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in traj]
+        return {
+            "trajectory":  xyz,
+            "jacobi":      ic["jacobi"],
+            "period_tu":   ic["period"],
+            "period_days": ic.get("period_days", ic["period"] * 4.3425),
+            "stability":   ic["stability"],
+            "index":       idx,
+        }
+
+    futures  = [loop.run_in_executor(None, _propagate_one, s) for s in sampled]
+    orbits   = await asyncio.gather(*futures)
+    fam_meta = FAMILY_META.get(family_key, {"label": family_key, "color": "#AAAAAA"})
+    return {
+        "family_key": family_key,
+        "label":      fam_meta["label"],
+        "orbits":     list(orbits),
+    }
 
 
 # ── Internal helpers (run blocking scipy in thread pool) ──────────────────────

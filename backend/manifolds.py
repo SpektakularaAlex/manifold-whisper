@@ -97,6 +97,10 @@ def compute_manifold(
     state0 = np.array(ic["state"], dtype=float)
     T      = float(ic["period"])
 
+    # Period-adaptive propagation time (longer orbits need more time to develop)
+    t_unstable = max(t_forward,  2.5 * T)
+    t_stable   = max(t_backward, 3.0 * T)
+
     # ── Step 1: integrate orbit + STM with dense output ────────────────────
     sol, monodromy = propagate_with_stm_dense(state0, T, mu)
 
@@ -134,8 +138,8 @@ def compute_manifold(
         minus_ics.append(state_i - epsilon * v_local)
 
     # ── Step 4: propagate each perturbed IC ────────────────────────────────
-    # Stable manifold: integrate backward in time
-    T_prop = -(t_backward) if stable else t_forward
+    # Stable manifold: integrate backward in time (use period-adaptive times)
+    T_prop = -(t_stable) if stable else t_unstable
 
     def _propagate_branch(ic_state: np.ndarray) -> list[list[float]] | None:
         try:
@@ -151,11 +155,11 @@ def compute_manifold(
                 max_step=abs(T_prop) / 50,
             )
             traj = result.y[:3].T   # (n_steps, 3)
-            if len(traj) > 200:
-                idx  = np.linspace(0, len(traj) - 1, 200, dtype=int)
+            if len(traj) > 300:
+                idx  = np.linspace(0, len(traj) - 1, 300, dtype=int)
                 traj = traj[idx]
             # Discard trajectories that escape to infinity
-            if np.any(np.abs(traj) > 20.0):
+            if np.any(np.abs(traj) > 50.0):
                 return None
             return traj.tolist()
         except Exception:

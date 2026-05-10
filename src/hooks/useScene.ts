@@ -16,10 +16,32 @@ export interface TrajectoryMeta {
   label: string;
   color: string;
   family?: string;
+  familyKey?: string;
   period?: number;
+  periodDays?: number;
   jacobi?: number;
+  stability?: number;
+  libr?: number | null;
+  branch?: string | null;
+  orbitIndex?: number;
   pointCount: number;
   object: THREE.Mesh;
+}
+
+export interface FamilyOrbitInput {
+  trajectory: [number, number, number][];
+  jacobi: number;
+  period_tu: number;
+  period_days: number;
+  stability: number;
+  index: number;
+}
+
+export interface HighlightedOrbitInfo {
+  jacobi: number;
+  period_tu: number;
+  period_days: number;
+  stability: number;
 }
 
 export interface SceneAPI {
@@ -27,9 +49,22 @@ export interface SceneAPI {
     points: [number, number, number][],
     color: string,
     label: string,
-    metadata?: { family?: string; period?: number; jacobi?: number },
+    metadata?: {
+      family?: string; familyKey?: string; period?: number; periodDays?: number;
+      jacobi?: number; stability?: number; libr?: number | null;
+      branch?: string | null; orbitIndex?: number;
+    },
   ): string;
   addManifoldTubes(tubes: [number, number, number][][], color: string): string;
+  addFamilyOrbits(
+    orbits: FamilyOrbitInput[],
+    baseColor: string,
+    jacobiMin: number,
+    jacobiMax: number,
+    familyKey: string,
+  ): void;
+  highlightByJacobi(jacobi: number): HighlightedOrbitInfo | null;
+  getMedianOrbit(): { familyKey: string; orbitIndex: number } | null;
   clearTrajectories(): void;
   resetCamera(): void;
   showLagrangePoints(show: boolean): void;
@@ -70,28 +105,41 @@ export function useScene(
   options?: SceneOptions,
 ): SceneAPI {
   // Core Three.js refs
-  const rendererRef   = useRef<THREE.WebGLRenderer | null>(null);
-  const composerRef   = useRef<EffectComposer | null>(null);
-  const cameraRef     = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const composerRef = useRef<EffectComposer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const threeSceneRef = useRef<THREE.Scene | null>(null);
-  const controlsRef   = useRef<OrbitControls | null>(null);
-  const animFrameRef  = useRef<number>(0);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const animFrameRef = useRef<number>(0);
 
   // Shared clock — outside the effect so animateSpacecraft can read elapsed time
   const clockRef = useRef(new THREE.Clock());
 
   // Scene object refs
-  const lagrangeGroupRef  = useRef<THREE.Group | null>(null);
-  const trajGroupRef      = useRef<Map<string, THREE.Object3D[]>>(new Map());
+  const lagrangeGroupRef = useRef<THREE.Group | null>(null);
+  const trajGroupRef = useRef<Map<string, THREE.Object3D[]>>(new Map());
   const particleTracksRef = useRef<Map<string, ParticleTrack>>(new Map());
-  const registryRef       = useRef<Map<string, TrajectoryMeta>>(new Map());
-  const idRef             = useRef(0);
+  const registryRef = useRef<Map<string, TrajectoryMeta>>(new Map());
+  const idRef = useRef(0);
+
+  // Family orbit refs (for Jacobi slider highlighting)
+  interface FamilyOrbitEntry {
+    mesh: THREE.Mesh;
+    mat: THREE.MeshPhongMaterial;
+    jacobi: number;
+    period_tu: number;
+    period_days: number;
+    stability: number;
+    index: number;
+    familyKey: string;
+  }
+  const familyOrbitsRef = useRef<FamilyOrbitEntry[]>([]);
 
   // Spacecraft animation refs
-  const spacecraftRef      = useRef<THREE.Mesh | null>(null);
-  const spacecraftPathRef  = useRef<[number, number, number][]>([]);
+  const spacecraftRef = useRef<THREE.Mesh | null>(null);
+  const spacecraftPathRef = useRef<[number, number, number][]>([]);
   const spacecraftStartRef = useRef<number>(0);
-  const spacecraftDurRef   = useRef<number>(0);
+  const spacecraftDurRef = useRef<number>(0);
   const spacecraftActiveRef = useRef<boolean>(false);
 
   // Stable ref so the click listener (created once) always calls the latest callback
@@ -147,9 +195,9 @@ export function useScene(
     const starPositions = new Float32Array(5000 * 3);
     for (let i = 0; i < 5000; i++) {
       const theta = Math.random() * Math.PI * 2;
-      const phi   = Math.acos(2 * Math.random() - 1);
-      const r     = 50;
-      starPositions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 50;
+      starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       starPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       starPositions[i * 3 + 2] = r * Math.cos(phi);
     }
@@ -185,18 +233,18 @@ export function useScene(
     ));
 
     // ── Reference plane (Earth-Moon orbital plane at z=0) ─────────────────
-    const planeGeo = new THREE.CircleGeometry(2.0, 64);
-    const planeMat = new THREE.MeshBasicMaterial({
-      color: 0x334455,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    scene.add(new THREE.Mesh(planeGeo, planeMat));
+    // const planeGeo = new THREE.CircleGeometry(2.0, 64);
+    // const planeMat = new THREE.MeshBasicMaterial({
+    //   color: 0x334455,
+    //   transparent: true,
+    //   opacity: 0.08,
+    //   side: THREE.DoubleSide,
+    //   depthWrite: false,
+    // });
+    // scene.add(new THREE.Mesh(planeGeo, planeMat));
 
     // ── Moon ──────────────────────────────────────────────────────────────
-    const moonMat  = new THREE.MeshPhongMaterial({ color: 0xaaaaaa, shininess: 20 });
+    const moonMat = new THREE.MeshPhongMaterial({ color: 0xaaaaaa, shininess: 20 });
     const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(0.038, 24, 24), moonMat);
     moonMesh.position.set(1 - MU, 0, 0);
     scene.add(moonMesh);
@@ -212,11 +260,11 @@ export function useScene(
     lagrangeGroup.visible = false;
     lagrangeGroupRef.current = lagrangeGroup;
     const lgData: [string, number, number, number][] = [
-      ["L1",  0.8369,        0,               0],
-      ["L2",  1.1557,        0,               0],
-      ["L3", -1.0051,        0,               0],
-      ["L4",  0.5 - MU,  Math.sqrt(3) / 2,   0],
-      ["L5",  0.5 - MU, -Math.sqrt(3) / 2,   0],
+      ["L1", 0.8369, 0, 0],
+      ["L2", 1.1557, 0, 0],
+      ["L3", -1.0051, 0, 0],
+      ["L4", 0.5 - MU, Math.sqrt(3) / 2, 0],
+      ["L5", 0.5 - MU, -Math.sqrt(3) / 2, 0],
     ];
     const lgGeo = new THREE.SphereGeometry(0.015, 10, 10);
     for (const [name, x, y, z] of lgData) {
@@ -253,7 +301,7 @@ export function useScene(
       );
       raycaster.setFromCamera(mouse, camera);
       const meshes = Array.from(registryRef.current.values()).map((r) => r.object);
-      const hits   = raycaster.intersectObjects(meshes, false);
+      const hits = raycaster.intersectObjects(meshes, false);
       if (hits.length > 0) {
         const hitObj = hits[0].object as THREE.Mesh;
         for (const [, meta] of registryRef.current) {
@@ -275,7 +323,7 @@ export function useScene(
         if (totalLength === 0 || points.length < 2) return;
         const n = meshes.length;
         for (let idx = 0; idx < n; idx++) {
-          const frac   = ((elapsed / 8) + idx / n) % 1;
+          const frac = ((elapsed / 8) + idx / n) % 1;
           const target = frac * totalLength;
           let acc = 0;
           for (let i = 0; i < points.length - 1; i++) {
@@ -294,13 +342,13 @@ export function useScene(
       if (spacecraftActiveRef.current && spacecraftRef.current) {
         const scElapsed = clockRef.current.getElapsedTime() - spacecraftStartRef.current;
         const path = spacecraftPathRef.current;
-        const dur  = spacecraftDurRef.current;
+        const dur = spacecraftDurRef.current;
         if (path.length > 1) {
           // dur * 8: one non-dim TU ≈ 8 real seconds of animation
-          const t      = Math.min(scElapsed / (dur * 8), 1.0);
+          const t = Math.min(scElapsed / (dur * 8), 1.0);
           const rawIdx = t * (path.length - 1);
-          const idx    = Math.floor(rawIdx);
-          const frac   = rawIdx - idx;
+          const idx = Math.floor(rawIdx);
+          const frac = rawIdx - idx;
           if (idx >= path.length - 1) {
             const last = path[path.length - 1];
             spacecraftRef.current.position.set(last[0], last[1], last[2]);
@@ -352,13 +400,13 @@ export function useScene(
       trajGroupRef.current.clear();
       particleTracksRef.current.clear();
       registryRef.current.clear();
-      spacecraftRef.current   = null;
+      spacecraftRef.current = null;
       spacecraftActiveRef.current = false;
-      rendererRef.current   = null;
-      composerRef.current   = null;
-      cameraRef.current     = null;
+      rendererRef.current = null;
+      composerRef.current = null;
+      cameraRef.current = null;
       threeSceneRef.current = null;
-      controlsRef.current   = null;
+      controlsRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -369,13 +417,17 @@ export function useScene(
       points: [number, number, number][],
       color: string,
       label: string,
-      metadata?: { family?: string; period?: number; jacobi?: number },
+      metadata?: {
+        family?: string; familyKey?: string; period?: number; periodDays?: number;
+        jacobi?: number; stability?: number; libr?: number | null;
+        branch?: string | null; orbitIndex?: number;
+      },
     ): string => {
       const scene = threeSceneRef.current;
       if (!scene || points.length < 2) return "";
-      const id    = `traj_${++idRef.current}`;
+      const id = `traj_${++idRef.current}`;
       const verts = points.map(([x, y, z]) => new THREE.Vector3(x, y, z));
-      const curve   = new THREE.CatmullRomCurve3(verts);
+      const curve = new THREE.CatmullRomCurve3(verts);
       const tubeGeo = new THREE.TubeGeometry(
         curve, Math.min(points.length * 3, 600), 0.005, 6, false,
       );
@@ -398,11 +450,17 @@ export function useScene(
       particleTracksRef.current.set(id, { meshes, points: verts, totalLength });
       registryRef.current.set(id, {
         id, label, color,
-        family:     metadata?.family,
-        period:     metadata?.period,
-        jacobi:     metadata?.jacobi,
+        family: metadata?.family,
+        familyKey: metadata?.familyKey,
+        period: metadata?.period,
+        periodDays: metadata?.periodDays,
+        jacobi: metadata?.jacobi,
+        stability: metadata?.stability,
+        libr: metadata?.libr,
+        branch: metadata?.branch,
+        orbitIndex: metadata?.orbitIndex,
         pointCount: points.length,
-        object:     tube,
+        object: tube,
       });
       return id;
     },
@@ -413,16 +471,16 @@ export function useScene(
     (tubes: [number, number, number][][], color: string): string => {
       const scene = threeSceneRef.current;
       if (!scene) return "";
-      const id      = `manifold_${++idRef.current}`;
+      const id = `manifold_${++idRef.current}`;
       const objects: THREE.Object3D[] = [];
       for (const tubePts of tubes) {
         if (tubePts.length < 2) continue;
         const verts = tubePts.map(([x, y, z]) => new THREE.Vector3(x, y, z));
         const curve = new THREE.CatmullRomCurve3(verts);
-        const geo   = new THREE.TubeGeometry(
+        const geo = new THREE.TubeGeometry(
           curve, Math.min(tubePts.length * 2, 200), 0.002, 4, false,
         );
-        const mat  = new THREE.MeshPhongMaterial({
+        const mat = new THREE.MeshPhongMaterial({
           color: new THREE.Color(color),
           transparent: true,
           opacity: 0.45,
@@ -456,13 +514,106 @@ export function useScene(
     trajGroupRef.current.clear();
     particleTracksRef.current.clear();
     registryRef.current.clear();
+    familyOrbitsRef.current = [];
     // Stop any active spacecraft animation
     spacecraftActiveRef.current = false;
     if (spacecraftRef.current) spacecraftRef.current.visible = false;
   }, []);
 
+  const addFamilyOrbits = useCallback(
+    (
+      orbits: FamilyOrbitInput[],
+      baseColor: string,
+      jacobiMin: number,
+      jacobiMax: number,
+      familyKey: string,
+    ): void => {
+      const scene = threeSceneRef.current;
+      if (!scene || orbits.length === 0) return;
+
+      // Clear existing scene content first
+      trajGroupRef.current.forEach((objects) => {
+        objects.forEach((obj) => {
+          scene.remove(obj);
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry.dispose();
+            (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(
+              (m) => (m as THREE.Material).dispose(),
+            );
+          }
+        });
+      });
+      trajGroupRef.current.clear();
+      particleTracksRef.current.clear();
+      registryRef.current.clear();
+      familyOrbitsRef.current = [];
+
+      const base = new THREE.Color(baseColor);
+      const white = new THREE.Color(0xffffff);
+      const range = jacobiMax - jacobiMin;
+
+      for (const orb of orbits) {
+        if (orb.trajectory.length < 2) continue;
+        const t = range > 0 ? (orb.jacobi - jacobiMin) / range : 0.5;
+        const col = new THREE.Color().lerpColors(base, white, t * 0.6);
+        const verts = orb.trajectory.map(([x, y, z]) => new THREE.Vector3(x, y, z));
+        const curve = new THREE.CatmullRomCurve3(verts);
+        const geo = new THREE.TubeGeometry(
+          curve, Math.min(orb.trajectory.length * 2, 600), 0.005, 6, false,
+        );
+        const mat = new THREE.MeshPhongMaterial({
+          color: col,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        scene.add(mesh);
+        const id = `family_${++idRef.current}`;
+        trajGroupRef.current.set(id, [mesh]);
+        familyOrbitsRef.current.push({
+          mesh, mat,
+          jacobi: orb.jacobi,
+          period_tu: orb.period_tu,
+          period_days: orb.period_days,
+          stability: orb.stability,
+          index: orb.index,
+          familyKey,
+        });
+      }
+    },
+    [],
+  );
+
+  const highlightByJacobi = useCallback((jacobi: number): HighlightedOrbitInfo | null => {
+    const entries = familyOrbitsRef.current;
+    if (entries.length === 0) return null;
+    let closest = entries[0];
+    let minDiff = Math.abs(entries[0].jacobi - jacobi);
+    for (const e of entries) {
+      const d = Math.abs(e.jacobi - jacobi);
+      if (d < minDiff) { minDiff = d; closest = e; }
+    }
+    for (const e of entries) {
+      e.mat.opacity = e === closest ? 1.0 : 0.15;
+    }
+    return {
+      jacobi: closest.jacobi,
+      period_tu: closest.period_tu,
+      period_days: closest.period_days,
+      stability: closest.stability,
+    };
+  }, []);
+
+  const getMedianOrbit = useCallback((): { familyKey: string; orbitIndex: number } | null => {
+    const entries = familyOrbitsRef.current;
+    if (entries.length === 0) return null;
+    const mid = entries[Math.floor(entries.length / 2)];
+    return { familyKey: mid.familyKey, orbitIndex: mid.index };
+  }, []);
+
   const resetCamera = useCallback(() => {
-    const camera   = cameraRef.current;
+    const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
     const fromPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
@@ -486,8 +637,8 @@ export function useScene(
   const animateSpacecraft = useCallback(
     (path: [number, number, number][], duration: number) => {
       if (!spacecraftRef.current || path.length === 0) return;
-      spacecraftPathRef.current  = path;
-      spacecraftDurRef.current   = duration;
+      spacecraftPathRef.current = path;
+      spacecraftDurRef.current = duration;
       spacecraftStartRef.current = clockRef.current.getElapsedTime();
       spacecraftActiveRef.current = true;
       spacecraftRef.current.visible = true;
@@ -505,13 +656,16 @@ export function useScene(
     () => ({
       addTrajectory,
       addManifoldTubes,
+      addFamilyOrbits,
+      highlightByJacobi,
+      getMedianOrbit,
       clearTrajectories,
       resetCamera,
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
     }),
-    [addTrajectory, addManifoldTubes, clearTrajectories, resetCamera,
-     showLagrangePoints, animateSpacecraft, stopSpacecraft],
+    [addTrajectory, addManifoldTubes, addFamilyOrbits, highlightByJacobi, getMedianOrbit,
+      clearTrajectories, resetCamera, showLagrangePoints, animateSpacecraft, stopSpacecraft],
   );
 }
