@@ -4,8 +4,8 @@
 
 **Built at AITX Hackathon 2025 · Agents Track**
 
-[![Demo Video](https://img.shields.io/badge/Demo-Loom%20Video-purple)](https://loom.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Demo Video](https://img.shields.io/badge/Demo-Loom%20Video-purple)]([https://loom.com](https://www.loom.com/share/7ec94ebc1aa84b1a95f94326bba8c9ae))
+
 
 ---
 
@@ -31,7 +31,7 @@ The invariant manifolds of the three-body problem are gravitational highways: tu
 
 - Python 3.11+
 - Node.js 18+
-- An OpenAI API key (GPT-4o)
+- OpenAI API key (GPT-4o)
 
 ### 1. Clone the repo
 
@@ -244,13 +244,7 @@ ALLOWED_ORIGINS=https://your-app.netlify.app
 
 *Visiting researcher from Sweden, specializing in cislunar astrodynamics and periodic orbit continuation methods.*
 
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
 
 ---
 
-*Built in 24 hours at AITX Hackathon, Austin TX, May 2025.*
-*Physics never sleeps. Neither did we.*
+*Built at AITX Hackathon, Austin TX, May 2025.*
