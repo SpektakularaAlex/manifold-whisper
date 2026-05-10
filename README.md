@@ -1,4 +1,4 @@
-# 🌌 Manifold — Cislunar Space Mission Design, Reimagined
+# Manifold — Cislunar Space Mission Design, Reimagined
 
 > *"Before Europeans could cross the Atlantic efficiently, they mapped the ocean currents — the invisible highways of the sea. We are at that same moment in space exploration. Manifold maps the gravitational highways of cislunar space."*
 
