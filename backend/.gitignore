@@ -1,0 +1,6 @@
+.env
+ics_cache.json
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
