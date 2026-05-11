@@ -14,6 +14,28 @@ Manifold is a natural-language interface for cislunar astrodynamics. Type (or ev
 It is aimed at space mission designers, astrodynamics researchers, and anyone who wants to explore cislunar space without needing to write a single line of trajectory code.
 
 ---
+## Some Demo figures:
+
+<table>
+  <tr>
+    <td align="center" width="40%">
+      <img src="fig/Demo_Image_1.png" width="95%">
+      <br><em> Pseudo Arclength continuation through collision with the moon in the CR3BP using Levi Civita regularization </em>
+    </td>
+    <td align="center" width="40%">
+      <img src="fig/Demo_Image_2.png" width="95%">
+      <br><em>Stable and unstable manifolds of an L1 Lyapunov periodic orbit in the CR3BP</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="40%">
+      <img src="fig/Demo_Image_3.png" width="95%">
+      <br><em>Stable and unstable manifolds of an L1 Lyapunov periodic orbit in the CR3BP</em>
+    </td>
+  </tr>
+</table>
+
+---
 
 ## Why It Matters
 
