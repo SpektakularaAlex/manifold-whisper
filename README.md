@@ -18,19 +18,23 @@ It is aimed at space mission designers, astrodynamics researchers, and anyone wh
 
 <table>
   <tr>
-    <td align="center" width="40%">
+    <td align="center" width="50%">
       <img src="fig/Demo_Image_1.png" width="95%">
-      <br><em> Pseudo Arclength continuation through collision with the moon in the CR3BP using Levi Civita regularization </em>
+      <br><em> </em>
     </td>
-    <td align="center" width="40%">
+    <td align="center" width="50%">
       <img src="fig/Demo_Image_2.png" width="95%">
-      <br><em>Stable and unstable manifolds of an L1 Lyapunov periodic orbit in the CR3BP</em>
+      <br><em> </em>
     </td>
   </tr>
   <tr>
-    <td align="center" width="40%">
+    <td align="center" width="50%">
       <img src="fig/Demo_Image_3.png" width="95%">
-      <br><em>Stable and unstable manifolds of an L1 Lyapunov periodic orbit in the CR3BP</em>
+      <br><em> </em>
+    </td>
+    <td align="center" width="50%">
+      <img src="fig/Demo_Image_4.png" width="95%">
+      <br><em> </em>
     </td>
   </tr>
 </table>
