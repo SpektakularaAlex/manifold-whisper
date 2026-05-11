@@ -22,13 +22,7 @@ visualizer. The system operates in the Earth-Moon CR3BP (Circular Restricted
 Three-Body Problem) rotating frame, non-dimensional units.
 
 AVAILABLE ORBIT FAMILIES — use these exact family_key strings, no others:
-  halo_L1_N   — L1 Northern Halo          halo_L1_S   — L1 Southern Halo
-  halo_L2_N   — L2 Northern Halo          halo_L2_S   — L2 Southern Halo
-  halo_L3_N   — L3 Northern Halo          halo_L3_S   — L3 Southern Halo
-  lyapunov_L1 — L1 Lyapunov               lyapunov_L2 — L2 Lyapunov
-  lyapunov_L3 — L3 Lyapunov
-  butterfly_N — Butterfly North            butterfly_S — Butterfly South
-  dragonfly_N — Dragonfly North            dragonfly_S — Dragonfly South
+{available_families}
 
 If the user requests a family not in the list above, explain it is unavailable and suggest
 the closest alternative. Do NOT emit commands for unavailable families.
@@ -146,9 +140,47 @@ _FALLBACK = {
 }
 
 
+_KEY_DESCRIPTIONS: dict[str, str] = {
+    "halo_L1_N":        "L1 Northern Halo",
+    "halo_L1_S":        "L1 Southern Halo",
+    "halo_L2_N":        "L2 Northern Halo",
+    "halo_L2_S":        "L2 Southern Halo",
+    "halo_L3_N":        "L3 Northern Halo",
+    "halo_L3_S":        "L3 Southern Halo",
+    "lyapunov_L1":      "L1 Lyapunov",
+    "lyapunov_L2":      "L2 Lyapunov",
+    "lyapunov_L3":      "L3 Lyapunov",
+    "butterfly_N":      "Butterfly North",
+    "butterfly_S":      "Butterfly South",
+    "dragonfly_N":      "Dragonfly North",
+    "dragonfly_S":      "Dragonfly South",
+    "axial_L1":         "L1 Axial",
+    "axial_L2":         "L2 Axial",
+    "axial_L3":         "L3 Axial",
+    "axial_L4":         "L4 Axial",
+    "axial_L5":         "L5 Axial",
+    "vertical_L1":      "L1 Vertical",
+    "vertical_L2":      "L2 Vertical",
+    "vertical_L3":      "L3 Vertical",
+    "vertical_L4":      "L4 Vertical",
+    "vertical_L5":      "L5 Vertical",
+    "long_period_L4":   "L4 Long Period",
+    "long_period_L5":   "L5 Long Period",
+    "short_period_L4":  "L4 Short Period",
+    "short_period_L5":  "L5 Short Period",
+    "distant_prograde": "Distant Prograde",
+    "distant_retrograde": "Distant Retrograde",
+    "low_prograde_E":   "Low Prograde (East)",
+    "low_prograde_W":   "Low Prograde (West)",
+}
+
+
 def _build_system_prompt(available_keys: list[str]) -> str:
     if available_keys:
-        lines = "\n".join(f"  - {k}" for k in sorted(available_keys))
+        lines = "\n".join(
+            f"  {k:<22} — {_KEY_DESCRIPTIONS.get(k, k)}"
+            for k in sorted(available_keys)
+        )
     else:
         lines = "  (none loaded yet)"
     return _SYSTEM_PROMPT_TEMPLATE.format(available_families=lines)

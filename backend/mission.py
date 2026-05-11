@@ -16,22 +16,40 @@ logger = logging.getLogger(__name__)
 TU_TO_DAYS = 4.3425  # 1 non-dim TU ≈ 4.3425 days
 
 FAMILY_COLORS = {
-    "halo_L1_N":   "#FFFFFF", "halo_L1_S":   "#DDDDDD",
-    "halo_L2_N":   "#AADDFF", "halo_L2_S":   "#88BBFF",
-    "halo_L3_N":   "#FFAADD", "halo_L3_S":   "#FF88BB",
-    "lyapunov_L1": "#00FFFF", "lyapunov_L2": "#00DDDD", "lyapunov_L3": "#00BBBB",
-    "butterfly_N": "#FF6B35", "butterfly_S": "#FF8C5A",
-    "dragonfly_N": "#FFD700", "dragonfly_S": "#FFC200",
+    "halo_L1_N":          "#FFFFFF", "halo_L1_S":          "#DDDDDD",
+    "halo_L2_N":          "#AADDFF", "halo_L2_S":          "#88BBFF",
+    "halo_L3_N":          "#FFAADD", "halo_L3_S":          "#FF88BB",
+    "lyapunov_L1":        "#00FFFF", "lyapunov_L2":        "#00DDDD", "lyapunov_L3": "#00BBBB",
+    "butterfly_N":        "#FF6B35", "butterfly_S":        "#FF8C5A",
+    "dragonfly_N":        "#FFD700", "dragonfly_S":        "#FFC200",
+    "axial_L1":           "#CC88FF", "axial_L2":           "#BB77EE", "axial_L3":    "#AA66DD",
+    "axial_L4":           "#9955CC", "axial_L5":           "#8844BB",
+    "vertical_L1":        "#44FF88", "vertical_L2":        "#33EE77", "vertical_L3": "#22DD66",
+    "vertical_L4":        "#11CC55", "vertical_L5":        "#00BB44",
+    "long_period_L4":     "#FF9933", "long_period_L5":     "#FF7722",
+    "short_period_L4":    "#FFCC33", "short_period_L5":    "#FFBB22",
+    "distant_prograde":   "#00FFEE", "distant_retrograde": "#FF44AA",
+    "low_prograde_E":     "#AAFF44", "low_prograde_W":     "#88EE33",
 }
 
 FAMILY_LABELS = {
-    "halo_L1_N":   "L1 North Halo",    "halo_L1_S":   "L1 South Halo",
-    "halo_L2_N":   "L2 North Halo",    "halo_L2_S":   "L2 South Halo",
-    "halo_L3_N":   "L3 North Halo",    "halo_L3_S":   "L3 South Halo",
-    "lyapunov_L1": "L1 Lyapunov",      "lyapunov_L2": "L2 Lyapunov",
-    "lyapunov_L3": "L3 Lyapunov",
-    "butterfly_N": "Butterfly North",  "butterfly_S": "Butterfly South",
-    "dragonfly_N": "Dragonfly North",  "dragonfly_S": "Dragonfly South",
+    "halo_L1_N":          "L1 North Halo",       "halo_L1_S":          "L1 South Halo",
+    "halo_L2_N":          "L2 North Halo",       "halo_L2_S":          "L2 South Halo",
+    "halo_L3_N":          "L3 North Halo",       "halo_L3_S":          "L3 South Halo",
+    "lyapunov_L1":        "L1 Lyapunov",         "lyapunov_L2":        "L2 Lyapunov",
+    "lyapunov_L3":        "L3 Lyapunov",
+    "butterfly_N":        "Butterfly North",     "butterfly_S":        "Butterfly South",
+    "dragonfly_N":        "Dragonfly North",     "dragonfly_S":        "Dragonfly South",
+    "axial_L1":           "L1 Axial",            "axial_L2":           "L2 Axial",
+    "axial_L3":           "L3 Axial",            "axial_L4":           "L4 Axial",
+    "axial_L5":           "L5 Axial",
+    "vertical_L1":        "L1 Vertical",         "vertical_L2":        "L2 Vertical",
+    "vertical_L3":        "L3 Vertical",         "vertical_L4":        "L4 Vertical",
+    "vertical_L5":        "L5 Vertical",
+    "long_period_L4":     "L4 Long Period",      "long_period_L5":     "L5 Long Period",
+    "short_period_L4":    "L4 Short Period",     "short_period_L5":    "L5 Short Period",
+    "distant_prograde":   "Distant Prograde",    "distant_retrograde": "Distant Retrograde",
+    "low_prograde_E":     "Low Prograde (East)", "low_prograde_W":     "Low Prograde (West)",
 }
 
 
