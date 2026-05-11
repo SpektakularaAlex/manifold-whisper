@@ -240,7 +240,7 @@ ALLOWED_ORIGINS=https://your-app.netlify.app
 |------|------|
 | Alexander Cremer | 
 
-*Visiting researcher from Sweden, specializing in cislunar astrodynamics and periodic orbit continuation methods.*
+*Undergraduate visiting researcher from Sweden, specializing in cislunar celestial mechanics and periodic orbit continuation methods.*
 
 
 ---
