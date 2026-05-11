@@ -4,8 +4,6 @@
 
 **Built at AITX Hackathon 2025 · Agents Track**
 
-[![Demo Video](https://img.shields.io/badge/Demo-Loom%20Video-purple)]([https://loom.com](https://www.loom.com/share/7ec94ebc1aa84b1a95f94326bba8c9ae))
-
 
 ---
 
