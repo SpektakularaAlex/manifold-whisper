@@ -236,9 +236,9 @@ ALLOWED_ORIGINS=https://your-app.netlify.app
 
 ## Team
 
-| Name | Role |
+| Name | 
 |------|------|
-| Alexander Cremer | Astrodynamics researcher, full-stack, physics engine |
+| Alexander Cremer | 
 
 *Visiting researcher from Sweden, specializing in cislunar astrodynamics and periodic orbit continuation methods.*
 
