@@ -11,6 +11,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+MU_BY_SYSTEM: dict[str, float] = {
+    "earth-moon":       0.01215058560962404,
+    "sun-earth":        3.003480e-6,
+    "jupiter-europa":   2.528017e-5,
+    "saturn-enceladus": 1.901e-7,
+    "saturn-titan":     2.366e-4,
+    "mars-phobos":      1.667e-8,
+}
+
+def get_mu_for_system(system_id: str) -> float:
+    return MU_BY_SYSTEM.get(system_id, 0.01215058560962404)
+
 # ── CSV filename → (family, libr, branch) ─────────────────────────────────────
 
 _CSV_MAP: dict[str, tuple[str, int | None, str | None]] = {

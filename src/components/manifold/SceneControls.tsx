@@ -1,12 +1,13 @@
-import { RotateCcw, Trash2, Info } from "lucide-react";
+import { RotateCcw, Trash2, Info, Rocket } from "lucide-react";
 
 interface SceneControlsProps {
   onResetCamera: () => void;
   onClearTrajectories: () => void;
   onToggleLabels: () => void;
+  onMission?: () => void;
 }
 
-export function SceneControls({ onResetCamera, onClearTrajectories, onToggleLabels }: SceneControlsProps) {
+export function SceneControls({ onResetCamera, onClearTrajectories, onToggleLabels, onMission }: SceneControlsProps) {
   return (
     <div
       className="manifold-panel manifold-fade-in manifold-delay-2"
@@ -35,8 +36,13 @@ export function SceneControls({ onResetCamera, onClearTrajectories, onToggleLabe
         <Trash2 size={12} /> <span>Clear Trajectories</span>
       </button>
       <button className="manifold-icon-btn" onClick={onToggleLabels}>
-        <Info size={12} /> <span>Toggle Labels</span>
+        <Info size={12} /> <span>Lagrange Points</span>
       </button>
+      {onMission && (
+        <button className="manifold-icon-btn" onClick={onMission}>
+          <Rocket size={12} /> <span>Mission Builder</span>
+        </button>
+      )}
     </div>
   );
 }

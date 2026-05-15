@@ -1,8 +1,12 @@
+import type { CRSystem, SearchEntry } from "@/data/systems"
+
 interface InfoPanelProps {
-  explanation: string;
-  suggestedNext: string;
-  isThinking: boolean;
-  onSuggestionClick: (s: string) => void;
+  explanation?: string;
+  suggestedNext?: string;
+  isThinking?: boolean;
+  onSuggestionClick?: (s: string) => void;
+  systemInfo?: CRSystem | null;
+  conceptContent?: SearchEntry | null;
 }
 
 const THINKING_STATES = [
@@ -13,7 +17,7 @@ const THINKING_STATES = [
 
 import { useEffect, useState } from "react";
 
-export function InfoPanel({ explanation, suggestedNext, isThinking, onSuggestionClick }: InfoPanelProps) {
+export function InfoPanel({ explanation, suggestedNext, isThinking, onSuggestionClick, systemInfo, conceptContent }: InfoPanelProps) {
   const [thinkingIdx, setThinkingIdx] = useState(0);
 
   useEffect(() => {
@@ -54,12 +58,29 @@ export function InfoPanel({ explanation, suggestedNext, isThinking, onSuggestion
       <div style={{ height: 1, background: "rgba(0,255,255,0.2)" }} />
 
       <div style={{ minHeight: 80, fontSize: 13, lineHeight: 1.55, color: "#cfe3f0" }}>
-        {isThinking ? (
+        {conceptContent ? (
+          <div>
+            <div style={{ color: "var(--manifold-cyan)", fontWeight: 700, marginBottom: 6, fontSize: 12, letterSpacing: "0.08em" }}>
+              {conceptContent.label}
+            </div>
+            <div style={{ fontSize: 11, lineHeight: 1.55, color: "#cfe3f0" }}>{conceptContent.description}</div>
+          </div>
+        ) : isThinking ? (
           <span className="manifold-mono" style={{ color: "var(--manifold-cyan)", fontStyle: "italic", opacity: 0.85 }}>
             {THINKING_STATES[thinkingIdx]}
           </span>
         ) : explanation ? (
           <span>{explanation}</span>
+        ) : systemInfo ? (
+          <div>
+            <div style={{ fontSize: 11, lineHeight: 1.5, color: "#cfe3f0", marginBottom: 10 }}>{systemInfo.description}</div>
+            <div className="manifold-mono" style={{ fontSize: 9, letterSpacing: "0.15em", color: "var(--manifold-orange)", marginBottom: 4, textTransform: "uppercase" }}>Fun Fact</div>
+            <div style={{ fontSize: 11, color: "#aabbd0", fontStyle: "italic", lineHeight: 1.4, marginBottom: 10 }}>{systemInfo.funFact}</div>
+            <div className="manifold-mono" style={{ fontSize: 9, letterSpacing: "0.15em", color: "var(--manifold-orange)", marginBottom: 6, textTransform: "uppercase" }}>Real Missions</div>
+            {systemInfo.realMissions.map((m, i) => (
+              <div key={i} style={{ fontSize: 10, color: "#7090a0", marginBottom: 3 }}>· {m}</div>
+            ))}
+          </div>
         ) : (
           <span
             className="manifold-mono"
@@ -70,7 +91,7 @@ export function InfoPanel({ explanation, suggestedNext, isThinking, onSuggestion
         )}
       </div>
 
-      {suggestedNext && !isThinking && (
+      {suggestedNext && !isThinking && !conceptContent && !systemInfo && (
         <div style={{ marginTop: 4 }}>
           <div
             className="manifold-mono"
@@ -78,7 +99,7 @@ export function InfoPanel({ explanation, suggestedNext, isThinking, onSuggestion
           >
             → try:
           </div>
-          <button className="manifold-suggestion" onClick={() => onSuggestionClick(suggestedNext)}>
+          <button className="manifold-suggestion" onClick={() => onSuggestionClick?.(suggestedNext)}>
             <span className="arrow">→</span>
             <span>{suggestedNext}</span>
           </button>

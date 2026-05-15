@@ -79,7 +79,7 @@ def _family_color(agent_family: str) -> str:
 
 # ── Agent-driven mission builder ─────────────────────────────────────────────
 
-def build_mission(legs: list[dict], mu: float = MU) -> dict:
+def build_mission(legs: list[dict], system: str = "earth-moon", mu: float = MU) -> dict:
     built: list[dict] = []
     for leg in legs:
         leg_type = leg.get("type", "")

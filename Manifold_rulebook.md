@@ -1,40 +1,43 @@
-# MANIFOLD — Project Rulebook
-### CR3BP Cislunar Mission Design Visualizer
-*Last updated: May 2026 — Update this file as the project evolves*
+# MANIFOLD — Project Rulebook v2
+### Multi-System CR3BP Orbital Dynamics Visualizer
+*Last updated: May 2026*
 
 ---
 
 ## 1. What This Is
 
-**Manifold** is an interactive, browser-based 3D visualization tool for exploring cislunar orbital dynamics using the Circular Restricted Three-Body Problem (CR3BP). Users interact with it through natural language — typing or speaking commands — and the system computes and renders trajectories, periodic orbits, invariant manifolds, and transfer arcs in real time.
+**Manifold** is an interactive, browser-based 3D visualization tool for exploring orbital dynamics across multiple CR3BP systems. Users interact through a structured control panel and fuzzy search bar — no LLM required. The system computes and renders periodic orbits, invariant manifolds, and transfer arcs in real time using verified initial conditions from the JPL Three-Body Periodic Orbit Catalog.
 
-**The one-line pitch:**  
-*"Tell it what you want to see in space, and it shows you — beautifully."*
+**The one-line pitch:**
+*"See the invisible highways of space — beautifully."*
 
-**Primary scope: Earth-Moon CR3BP system** (cislunar space). Sun-Earth system is future work.
+**Version history:**
+- v1 (hackathon, May 2026): Earth-Moon only, LLM natural language interface, won AITX Hackathon
+- v2 (current): Multi-system CR3BP, no LLM, structured UI + fuzzy search, free to host
 
 ---
 
 ## 2. Architecture
 
 ```
-Frontend (React + Three.js + Vite)
-    ↕ HTTPS REST
+Frontend (React + Vite + TanStack Start)
+    ↕ HTTPS REST (native fetch, no axios)
 Backend (FastAPI + Python)
-    ├── CR3BP Engine        (numpy + scipy)
-    ├── IC Library          (ics.json — hardcoded verified ICs)
-    ├── Manifold Propagator (eigenvector perturbation)
-    └── Agent Layer         (Anthropic Claude API)
+    ├── CR3BP Engine     (numpy + scipy DOP853)
+    ├── IC Cache         (JPL API + hardcoded fallbacks)
+    └── Manifold Engine  (STM + eigenvector perturbation)
 
 Hosting:
-    Frontend → Netlify (GitHub auto-deploy)
-    Backend  → Railway.app (FastAPI + uvicorn)
+    Frontend → Cloudflare Pages (free tier)
+    Backend  → Railway.app (free tier)
+
+NO LLM. NO API KEY REQUIRED FOR CORE FEATURES.
 ```
 
 ### Why This Split
-- CR3BP math stays in Python where it is well-tested and fast
-- Three.js rendering stays in JS where the ecosystem is richest
-- Claude runs server-side (API key never exposed to browser)
+- CR3BP math stays in Python — well-tested, fast, scipy ecosystem
+- Three.js rendering stays in JS — richest ecosystem for 3D browser graphics
+- No agent layer — all interaction is structured UI + fuzzy search
 - Each layer is independently replaceable
 
 ---
@@ -42,240 +45,287 @@ Hosting:
 ## 3. Repository Structure
 
 ```
-manifold/
-├── frontend/                   # React + Vite app (Lovable origin)
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── SpaceScene.jsx      # Three.js canvas — all 3D
-│   │   │   ├── ChatPanel.jsx       # NL input + agent response
-│   │   │   ├── InfoPanel.jsx       # Agent explanation text sidebar
-│   │   │   └── ControlPanel.jsx    # Optional manual parameter sliders
-│   │   ├── hooks/
-│   │   │   ├── useScene.js         # Three.js scene state management
-│   │   │   └── useAgent.js         # API calls to backend /agent
-│   │   ├── utils/
-│   │   │   └── sceneCommands.js    # Maps agent JSON → Three.js calls
-│   │   └── App.jsx
-│   ├── public/
-│   │   └── textures/               # Earth, Moon NASA texture maps
-│   ├── .env                        # VITE_API_URL=https://your.railway.app
-│   └── package.json
+manifold-whisper/
+├── src/
+│   ├── components/
+│   │   └── manifold/
+│   │       ├── SceneContainer.tsx      # Three.js mount point — DO NOT TOUCH
+│   │       ├── InfoPanel.tsx           # LEFT: system info + concept display
+│   │       ├── SystemControlPanel.tsx  # BOTTOM: orbit family controls (NEW v2)
+│   │       ├── SystemMiniMap.tsx       # BOTTOM-RIGHT: solar system switcher (NEW v2)
+│   │       ├── SearchBar.tsx           # TOP: fuzzy search (NEW v2)
+│   │       ├── SceneControls.tsx       # TOP-RIGHT: camera, clear, labels
+│   │       ├── TrajectoryInfoPanel.tsx # BOTTOM-RIGHT: click-to-inspect
+│   │       └── MissionPanel.tsx        # Mission builder + display
+│   ├── data/
+│   │   └── systems.ts                  # All system metadata (NEW v2)
+│   ├── hooks/
+│   │   └── useScene.ts                 # Three.js scene — NEVER MODIFY
+│   ├── utils/
+│   │   └── sceneCommands.ts            # Trajectory/tube → Three.js calls
+│   └── routes/
+│       └── index.tsx                   # Main page wiring
 │
-├── backend/                    # FastAPI Python app
-│   ├── main.py                     # FastAPI app, all endpoints
-│   ├── cr3bp.py                    # EOM, propagator, STM
-│   ├── manifolds.py                # Manifold tube computation
-│   ├── agent.py                    # Claude integration, prompt
-│   ├── ics.json                    # Verified initial conditions library
+├── backend/
+│   ├── main.py                         # FastAPI, all endpoints
+│   ├── cr3bp.py                        # EOM, STM, propagator
+│   ├── manifolds.py                    # Manifold tube computation
+│   ├── ic_cache.py                     # JPL fetch + fallbacks + MU_BY_SYSTEM
+│   ├── mission.py                      # Multi-leg mission builder
 │   ├── requirements.txt
-│   └── Dockerfile                  # For Railway deployment
+│   └── Dockerfile
 │
-├── MANIFOLD_RULEBOOK.md        # This file
+├── MANIFOLD_RULEBOOK.md
 └── README.md
 ```
 
 ---
 
-## 4. CR3BP Engine Rules
+## 4. Supported CR3BP Systems
 
-### 4.1 Non-Dimensionalization
-All internal computation is in **non-dimensional CR3BP units**:
-- Length unit (LU): Earth-Moon distance = 384,400 km
-- Time unit (TU): 1/ω where ω = mean motion = 2π / 27.3 days
-- Mass parameter: μ = 0.01215058560962404 (Earth-Moon)
+All systems use the JPL Three-Body Periodic Orbit Catalog API:
+`https://ssd-api.jpl.nasa.gov/periodic_orbits.api`
 
-**Never mix dimensional and non-dimensional quantities in the same function.**
-Always document units in function docstrings.
+| System ID        | Primary  | Secondary  | μ                    | Real Missions              |
+|------------------|----------|------------|----------------------|----------------------------|
+| earth-moon       | Earth    | Moon       | 0.01215058560962404  | CAPSTONE, Gateway, Artemis |
+| sun-earth        | Sun      | Earth      | 3.003480e-6          | JWST, SOHO, Gaia           |
+| jupiter-europa   | Jupiter  | Europa     | 2.528017e-5          | Europa Clipper             |
+| saturn-enceladus | Saturn   | Enceladus  | 1.901e-7             | Cassini                    |
+| saturn-titan     | Saturn   | Titan      | 2.366e-4             | Dragonfly (planned)        |
+| mars-phobos      | Mars     | Phobos     | 1.667e-8             | MMX (JAXA, planned)        |
 
-### 4.2 Equations of Motion
+### μ Lookup Rule
+Every backend computation must use the μ for the requested system.
+Never hardcode μ = 0.01215 for non-Earth-Moon requests.
+`ic_cache.py` is the single source of truth for μ values via `MU_BY_SYSTEM`.
+
+### IC Cache Key Format
+Keys are prefixed with system ID:
+  `"earth-moon:halo_L2_N"` not `"halo_L2_N"`
+This prevents cross-system IC contamination.
+
+---
+
+## 5. CR3BP Engine Rules
+
+### 5.1 Non-Dimensionalization
+All computation uses non-dimensional CR3BP units per system:
+- Length unit (LU): distance between primaries (varies per system)
+- Time unit (TU): 1/ω where ω = mean motion of the system
+- Mass parameter: μ as defined in the system table above
+
+Never mix systems in a single computation.
+Never hardcode μ — always pass it as a parameter.
+
+### 5.2 Equations of Motion (unchanged)
 Standard rotating frame CR3BP:
-```
-ẍ - 2ẏ = ∂Ω/∂x
-ÿ + 2ẋ = ∂Ω/∂y
-z̈     = ∂Ω/∂z
+  ẍ - 2ẏ = ∂Ω/∂x
+  ÿ + 2ẋ = ∂Ω/∂y
+  z̈     = ∂Ω/∂z
+  where Ω = ½(x² + y²) + (1-μ)/r₁ + μ/r₂
 
-where Ω = ½(x² + y²) + (1-μ)/r₁ + μ/r₂
-```
+### 5.3 Integrator (unchanged)
+- scipy.integrate.solve_ivp, method='DOP853'
+- rtol=1e-10, atol=1e-12. Never use RK45.
+- Default: 500 points per trajectory
 
-### 4.3 Integrator
-- Use scipy.integrate.solve_ivp with method='DOP853'
-- Tolerances: rtol=1e-10, atol=1e-12
-- Never use RK45 for orbital mechanics — DOP853 only
-- Default output: 500 points per trajectory
+### 5.4 IC Sources (priority order)
+1. JPL API (fetched on startup per system, cached in memory)
+2. Local disk cache (ics_cache.json)
+3. Hardcoded fallbacks (HARDCODED_FALLBACK_ICS — Earth-Moon only)
 
-### 4.4 IC Library (ics.json)
-- **Never compute ICs from scratch at request time.** Always look up from ics.json.
-- ICs sourced from Richardson (1980) 3rd-order analytical approximation, then verified by forward propagation confirming periodicity (|Δstate| < 1e-8 after one period).
-- Each IC entry must include: state [x,y,z,vx,vy,vz], period, jacobi_constant, family, libration_point, z_amplitude (for halos).
-- Supported families at launch: lyapunov_L1, lyapunov_L2, halo_L1_north, halo_L1_south, halo_L2_north, halo_L2_south, nrho
+If a family is unavailable: return a clear HTTP error, never wrong data.
 
-### 4.5 Manifold Computation
-- Compute STM by integrating alongside EOM (6+36 coupled ODEs)
-- Extract monodromy matrix M = STM(T)
-- Unstable eigenvector: eigenvector of M with |λ| > 1
-- Stable eigenvector: eigenvector of M with |λ| < 1
-- Perturbation magnitude: ε = 1e-6 (non-dimensional)
-- Default: 40 branches per manifold, propagated for T = 3.0 TU
+### 5.5 Manifold Computation (unchanged)
+- 42D augmented ODE (eom_with_stm_3d) for orbit + STM
+- Monodromy M = Φ(T), eigenvectors selected by |λ|
+- Branch eigenvectors: v(tᵢ) = Φ(tᵢ) @ v₀, normalized
+- Unstable: largest |λ|, ±ε → n_branches/2 tubes each direction
+- Stable: smallest non-zero |λ|, backward integration
+- Defaults: 40 branches, ε=1e-6, T_prop=3.0 TU
+- Filter: discard tubes with any point > 20 LU
 
 ---
 
-## 5. Agent Layer Rules
+## 6. API Endpoints
 
-### 5.1 What the Agent Does
-Claude receives the user's natural language input and returns a structured JSON command that the backend executes. It also generates a plain-English explanation for the InfoPanel.
+```
+GET  /health
+     Returns: {status, families_loaded}
 
-### 5.2 Agent Response Schema
-Every agent response must conform to:
-```json
-{
-  "commands": [
-    {
-      "action": "show_orbit | show_manifold | show_transfer | clear | camera_move | show_lagrange",
-      "params": {}
-    }
-  ],
-  "explanation": "2-3 sentence plain English explanation, accessible to non-experts",
-  "suggested_next": "One follow-up prompt the user might find interesting"
-}
+POST /orbit
+     Body:    {family, libr, branch, index, system}
+     Returns: {trajectory[[x,y,z],...], period, jacobi, total_members, metadata}
+     NOTE: total_members tells frontend how large the family is
+
+POST /manifold
+     Body:    {family, libr, branch, index, type, n_branches,
+               propagation_time, system}
+     type:    "stable" | "unstable" | "both"
+     Returns: For "both" — two response objects, one per type, each with color
+              For single type — {tubes[[[x,y,z]...],...], type, color}
+
+POST /mission
+     Body:    {legs:[...], system}
+     Returns: {legs[...], total_trajectory, total_duration}
 ```
 
-Multiple commands are allowed (e.g. show orbit + show manifold together).
-
-### 5.3 Agent Constraints
-- The agent must ONLY issue commands from the defined command schema
-- If a request is outside current capabilities, it must say so clearly and suggest what IS possible
-- The agent must never hallucinate orbital mechanics facts
-- All parameter values must be valid (checked against IC library before response)
-- The agent should always explain WHY something looks the way it does, not just WHAT it is
-
-### 5.4 Tone of Explanations
-- Assume the user is intelligent but not necessarily an astrodynamicist
-- Lead with the intuitive concept, then the mechanics
-- Use analogies freely ("think of manifold tubes as gravitational highways")
-- Never use unexplained jargon without a brief gloss
+The `system` field defaults to "earth-moon" on all POST endpoints.
+Frontend never calls /agent — that endpoint no longer exists.
 
 ---
 
-## 6. Frontend / Three.js Rules
+## 7. Frontend Architecture Rules
 
-### 6.1 Scene Composition
-The Three.js scene always contains:
-- Earth (textured sphere, radius scaled to scene)
-- Moon (textured sphere, correctly scaled and positioned)
-- Lagrange points L1-L5 as glowing point indicators (shown on demand)
-- Starfield background (static THREE.Points, ~5000 stars)
-- Ambient + directional lighting mimicking sunlight
+### 7.1 THE MOST IMPORTANT RULE: NEVER AUTO-CLEAR THE SCENE
+handleVisualize in index.tsx must NEVER call clearTrajectories().
+Users accumulate orbits by clicking "Add". They clear manually via
+SceneControls "Clear" button. This enables multi-orbit comparison.
 
-### 6.2 Visual Color Language
-Maintain consistent color coding throughout:
+### 7.2 Interaction Model
+1. SystemMiniMap (bottom-right) — switch between CR3BP systems
+2. SystemControlPanel (bottom-center) — select family/orbit/manifolds, click Add
+3. SearchBar (top-center) — fuzzy search systems, families, concepts
+4. SceneControls (top-right) — Reset Camera, Clear All, Toggle Labels
+5. Click any tube — TrajectoryInfoPanel shows orbit details
+6. Mission button — opens MissionPanel builder
 
-| Object              | Color              | Style                        |
-|---------------------|--------------------|------------------------------|
-| Lyapunov orbits     | #00FFFF cyan       | Thin tube, glowing           |
-| Halo orbits         | #FFFFFF white      | Medium tube, glowing         |
-| NRHO                | #FFD700 gold       | Medium tube, glowing         |
-| Unstable manifolds  | #FF6B35 orange     | Thin tubes, semi-transparent |
-| Stable manifolds    | #4FC3F7 ice blue   | Thin tubes, semi-transparent |
-| Transfer arcs       | #B39DDB lavender   | Highlighted, animated        |
-| Lagrange points     | #FFFF00 yellow     | Pulsing sphere + label       |
+### 7.3 useScene.ts — NEVER MODIFY
+All scene interactions go through the SceneAPI interface only:
+  addTrajectory(points, color, label, metadata?) → string id
+  addManifoldTubes(tubes, color) → string id
+  clearTrajectories() → void
+  resetCamera() → void
+  showLagrangePoints(show) → void
+  animateSpacecraft(path, duration) → void
+  stopSpacecraft() → void
 
-### 6.3 Post-Processing (Non-Negotiable)
-Always use UnrealBloomPass from Three.js postprocessing:
-- strength: 1.2
-- radius: 0.8
-- threshold: 0.1
+### 7.4 Manifold Color Rule
+Unstable manifolds: ALWAYS #FF6B35 (orange)
+Stable manifolds:   ALWAYS #4FC3F7 (ice blue)
+When type="both": make TWO separate fetch calls, render each color separately.
+Never use a single color for both.
 
-Without bloom the demo loses its visual impact entirely. This is not optional.
+### 7.5 Visual Color Language (unchanged)
 
-### 6.4 Camera
-- Default: OrbitControls — mouse drag to rotate, scroll to zoom, right-click to pan
-- Camera move commands from agent use smooth TWEEN.js animation, never instant jumps
-- Default starting position: looking at Earth-Moon system from ~30° above orbital plane
-- Always maintain Z-axis as "up" (matches CR3BP rotating frame)
+| Object             | Color   | Style                        |
+|--------------------|---------|------------------------------|
+| Lyapunov orbits    | #00FFFF | Thin tube, glowing           |
+| Halo orbits        | #FFFFFF | Medium tube, glowing         |
+| NRHO               | #FFD700 | Medium tube, glowing         |
+| Butterfly orbits   | #BB86FC | Medium tube, glowing         |
+| DRO                | #FFD700 | Medium tube, glowing         |
+| Unstable manifolds | #FF6B35 | Thin tubes, semi-transparent |
+| Stable manifolds   | #4FC3F7 | Thin tubes, semi-transparent |
+| Transfer arcs      | #B39DDB | Highlighted, animated        |
+| Lagrange points    | #FFFF00 | Pulsing sphere + label       |
+| Spacecraft dot     | #FFFFFF | Small sphere, animated       |
 
-### 6.5 Particle Animation
-Every trajectory rendered must have animated particles flowing along it showing direction of motion. Use THREE.Points interpolated along the trajectory array, cycling with modulo time. Static tubes alone feel dead — particles are required.
+### 7.6 Post-Processing (non-negotiable)
+UnrealBloomPass: strength 1.2, radius 0.8, threshold 0.1. Never remove.
 
-### 6.6 Performance Budget
-- Maximum simultaneous trajectory objects: 20 (prune oldest if exceeded)
-- Manifold branches: max 40 tubes per manifold
-- Each tube: max 200 segments
-- Target: 60fps on a modern laptop
-
----
-
-## 7. API Endpoints
-
-```
-POST /agent       NL input → JSON command + explanation
-POST /orbit       {family, lp, index} → {trajectory[], metadata}
-POST /manifold    {orbit_id, type, n_branches} → {tubes[][]}
-POST /transfer    {from_orbit, to_orbit} → {arc[]}
-GET  /health      {status: "ok"}
-```
-
-All trajectory data returned as arrays of [x, y, z] in non-dimensional units.
-Frontend is responsible for scaling to display coordinates.
+### 7.7 Performance Budget
+- Max 20 trajectory objects (prune oldest if exceeded)
+- Max 40 manifold tubes per manifold
+- Max 200 segments per tube
+- Target: 60fps on modern laptop
 
 ---
 
-## 8. Environment Variables
+## 8. Search (Fuse.js — client-side, zero cost)
 
-### Frontend (.env / Netlify dashboard)
-```
-VITE_API_URL=https://your-app.railway.app
-```
+Index built from systems.ts on mount. Three entry types: system, family, concept.
+Config: threshold 0.35, keys: [label, description, tags], min 2 chars, max 6 results.
 
-### Backend (Railway dashboard)
-```
-ANTHROPIC_API_KEY=sk-ant-...
-ALLOWED_ORIGINS=https://your-app.netlify.app
-```
-
-**Never commit API keys to git. Ever.**
+Results:
+- system → switch active system, update InfoPanel with system description
+- family → switch system if needed, pre-select family in SystemControlPanel
+- concept → show concept explanation in InfoPanel (replaces system description)
 
 ---
 
-## 9. Scope: What This Is NOT (v1)
+## 9. InfoPanel States
 
-Explicitly out of scope to stay shippable:
+State 1 (default): Shows selected system description + funFact + realMissions
+State 2 (concept): Shows concept title + explanation from systems.ts
+State 3 (welcome): "Select a system and orbit to begin." — shown on cold load
 
-- N-body propagation (CR3BP only)
-- Perturbations (SRP, J2, lunar harmonics)
-- Differential correction at runtime
-- Delta-V optimization
-- Sun-Earth system (future work)
-- User accounts or session saving
-- Mobile support
-- Voice input (text only for v1)
-
-If a user asks for out-of-scope features, the agent explains the limitation and redirects.
+InfoPanel never shows agent output. All content is pre-written in systems.ts.
 
 ---
 
-## 10. The Demo Script
+## 10. SystemControlPanel Behavior
 
-Practice this until it runs in exactly 90 seconds:
+Bottom-center, always visible.
+Controls (left to right): Family ▼ | L-Point ▼ | Branch ▼ | Member ━━●━━ | Manifolds ▼ | [Add]
 
-1. **"Show me the Earth-Moon system and its Lagrange points"**
-   → Five glowing points appear. Agent explains what Lagrange points are.
-
-2. **"Show me a halo orbit around L2 and its unstable manifold"**
-   → White halo appears, orange tubes fan out. Agent explains "gravitational highways."
-
-3. **"Design a transfer from the L2 halo to the Moon"**
-   → Lavender arc threads from manifold to lunar vicinity, particles flow along it.
-
-This is the sequence that wins. Everything else is secondary.
-
----
-
-## 11. Change Log
-
-| Date     | Change                  | Reason          |
-|----------|-------------------------|-----------------|
-| May 2026 | Initial rulebook created | Project kickoff |
+Rules:
+- L-Point dropdown: only shown if family.requiresLibr === true
+- Branch dropdown: only shown if family.requiresBranch === true
+- Member slider: range 0 to (total_members - 1), updated after first fetch
+- Below slider: show current Jacobi C and Period TU (read-only, from last fetch)
+- Slider drag: debounced 300ms fetch, showManifolds="none" during drag
+- [Add] button: calls handleVisualize, NEVER clears scene first
+- System switching is done via SystemMiniMap, NOT a dropdown here
 
 ---
 
-*"The goal is not to show that CR3BP is complicated. The goal is to show that space has structure — and that structure is beautiful."*
+## 11. SystemMiniMap
+
+Bottom-right corner, 200×200px SVG, glass panel.
+Shows solar system schematic with clickable system dots.
+Sun at center, systems at log-scaled orbital radii.
+Selected system: pulsing ring animation.
+Clicking a dot calls handleSystemChange(system).
+Switching system: clears scene, updates InfoPanel, resets control panel.
+
+---
+
+## 12. MissionPanel
+
+Opened via "Mission" button in SceneControls.
+Allows building multi-leg missions (orbit, manifold_departure, manifold_arrival).
+"Fly Mission" calls POST /mission and animates spacecraft.
+Uses currently selected system for all legs.
+
+---
+
+## 13. Environment Variables
+
+Frontend (.env): VITE_API_URL=http://localhost:8000
+Frontend (.env.production): VITE_API_URL=https://your-app.railway.app
+Backend (.env): # No API keys needed for v2
+
+---
+
+## 14. Out of Scope (v2)
+
+- LLM / natural language (v3 stretch, rate-limited)
+- Live satellite tracking (Phase 2)
+- Solar system scale view (Phase 3)
+- N-body propagation, perturbations, differential correction
+- User accounts, session saving, voice input
+
+---
+
+## 15. Roadmap
+
+v2: Multi-system CR3BP, structured UI, fuzzy search (current)
+v3: Live satellite tracking (SGP4 + CelesTrak + satellite.js)
+v4: Solar system scale + smooth zoom transition into CR3BP regions
+
+---
+
+## 16. Change Log
+
+| Date     | Change                                 | Reason                      |
+|----------|----------------------------------------|-----------------------------|
+| May 2026 | v1 created, hackathon submission       | AITX Hackathon              |
+| May 2026 | v1 won AITX Hackathon                  | —                           |
+| May 2026 | v2 branch created, surgical additions  | Post-hackathon development  |
+
+---
+
+*"The goal is not to show that CR3BP is complicated.*
+*The goal is to show that space has structure — and that structure is beautiful."*

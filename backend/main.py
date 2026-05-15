@@ -158,19 +158,21 @@ class OrbitRequest(BaseModel):
     libr:   int | None = None
     branch: str | None = None
     index:  int        = 0
+    system: str        = "earth-moon"
 
 class ManifoldRequest(BaseModel):
-    family:     str
-    libr:       int | None = None
-    branch:     str | None = None
-    index:      int        = 0
-    type:       str        = Field("unstable", pattern="^(stable|unstable|both)$")
-    n_branches: int        = Field(80, ge=2, le=160)
-    t_forward:  float      = Field(8.0, gt=0.0, le=50.0)
-    t_backward: float      = Field(10.0, gt=0.0, le=50.0)
+    family:           str
+    libr:             int | None = None
+    branch:           str | None = None
+    index:            int        = 0
+    type:             str        = Field("unstable", pattern="^(stable|unstable|both)$")
+    n_branches:       int        = Field(40, ge=2, le=160)
+    propagation_time: float      = Field(3.0, gt=0.0, le=50.0)
+    system:           str        = "earth-moon"
 
 class MissionRequest(BaseModel):
-    legs: list[dict]
+    legs:   list[dict]
+    system: str = "earth-moon"
 
 class TransferRequest(BaseModel):
     departure_family_key: str
@@ -282,43 +284,51 @@ def _compute_family_sync(family_key: str, n: int) -> dict:
     }
 
 
-def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index: int) -> dict:
-    ic  = ic_cache.get_ic(family, libr, branch, index)
-    T2  = 2.0 * ic["period"]
-    traj = cr3bp.propagate(ic["state"], T2, n_points=500)
+def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index: int, system: str = "earth-moon") -> dict:
+    mu   = ic_cache.get_mu_for_system(system)
+    ic   = ic_cache.get_ic(family, libr, branch, index)
+    fam  = ic_cache.get_family(family, libr, branch)
+    T2   = 2.0 * ic["period"]
+    traj = cr3bp.propagate(ic["state"], T2, mu, n_points=500)
     xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in traj]
     return {
-        "trajectory": xyz,
-        "period":     ic["period"],
-        "jacobi":     ic["jacobi"],
-        "metadata":   {"family": family, "libr": libr, "branch": branch},
+        "trajectory":    xyz,
+        "period":        ic["period"],
+        "jacobi":        ic["jacobi"],
+        "total_members": len(fam),
+        "metadata":      {"family": family, "libr": libr, "branch": branch},
     }
 
 
 def _compute_manifold_sync(
     family: str, libr: int | None, branch: str | None,
     index: int, manifold_type: str,
-    n_branches: int, t_forward: float, t_backward: float,
+    n_branches: int, propagation_time: float, system: str,
 ) -> dict:
-    ic = ic_cache.get_ic(family, libr, branch, index)
+    mu     = ic_cache.get_mu_for_system(system)
+    ic     = ic_cache.get_ic(family, libr, branch, index)
     result: dict = {"type": manifold_type}
+    tubes: list  = []
 
     if manifold_type in ("unstable", "both"):
         plus_u, minus_u = manifolds.compute_manifold(
-            ic, mu=cr3bp.MU, stable=False,
-            n_branches=n_branches, t_forward=t_forward, t_backward=t_backward,
+            ic, mu=mu, stable=False,
+            n_branches=n_branches, t_forward=propagation_time, t_backward=propagation_time,
         )
         result["unstable_plus"]  = plus_u
         result["unstable_minus"] = minus_u
+        tubes.extend(plus_u + minus_u)
 
     if manifold_type in ("stable", "both"):
         plus_s, minus_s = manifolds.compute_manifold(
-            ic, mu=cr3bp.MU, stable=True,
-            n_branches=n_branches, t_forward=t_forward, t_backward=t_backward,
+            ic, mu=mu, stable=True,
+            n_branches=n_branches, t_forward=propagation_time, t_backward=propagation_time,
         )
         result["stable_plus"]  = plus_s
         result["stable_minus"] = minus_s
+        tubes.extend(plus_s + minus_s)
 
+    result["tubes"] = tubes
     return result
 
 
@@ -330,7 +340,7 @@ async def orbit_endpoint(req: OrbitRequest):
         result = await asyncio.get_event_loop().run_in_executor(
             None,
             _compute_orbit_sync,
-            req.family, req.libr, req.branch, req.index,
+            req.family, req.libr, req.branch, req.index, req.system,
         )
         return result
     except KeyError as exc:
@@ -349,7 +359,7 @@ async def manifold_endpoint(req: ManifoldRequest):
             None,
             _compute_manifold_sync,
             req.family, req.libr, req.branch, req.index,
-            req.type, req.n_branches, req.t_forward, req.t_backward,
+            req.type, req.n_branches, req.propagation_time, req.system,
         )
         return result
     except KeyError as exc:
@@ -366,7 +376,7 @@ async def mission_endpoint(req: MissionRequest):
     """Build a multi-leg mission trajectory from structured leg descriptors."""
     loop = asyncio.get_event_loop()
     try:
-        result = await loop.run_in_executor(None, mission_mod.build_mission, req.legs)
+        result = await loop.run_in_executor(None, mission_mod.build_mission, req.legs, req.system)
         return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -471,9 +481,10 @@ async def agent_endpoint(req: AgentRequest):
 
         elif kind == "manifold":
             _, _, fam, lib, branch, index, mtype, n_branches, t_forward, t_backward = task
+            propagation_time = max(t_forward, t_backward)
             fut = loop.run_in_executor(
                 None, _compute_manifold_sync,
-                fam, lib, branch, index, mtype, n_branches, t_forward, t_backward,
+                fam, lib, branch, index, mtype, n_branches, propagation_time, "earth-moon",
             )
             futures.append(fut)
             task_meta.append(("manifold", cmd, mtype))
