@@ -276,12 +276,16 @@ function Index() {
             };
             const r = result as RawMission;
             const scene = sceneRef.current;
-            if (!scene) return;
-            for (const leg of r.legs) scene.addTrajectory(leg.trajectory, leg.color, leg.label, {});
+            if (!scene || !r?.legs) return;
+            scene.clearTrajectories();
+            for (const leg of r.legs) {
+              if (!leg.trajectory || leg.trajectory.length === 0) continue;
+              scene.addTrajectory(leg.trajectory, leg.color, leg.label, { family: leg.type });
+            }
             setMissionLegs(r.legs.map(l => ({ label: l.label, type: l.type, color: l.color, duration: l.duration })));
-            setMissionDuration(r.total_duration);
+            setMissionDuration(r.total_duration ?? 0);
             setMissionActive(true);
-            if (r.total_trajectory.length > 0) scene.animateSpacecraft(r.total_trajectory, r.total_duration);
+            if (r.total_trajectory?.length > 0) scene.animateSpacecraft(r.total_trajectory, r.total_duration ?? 10);
           }}
         />
       )}

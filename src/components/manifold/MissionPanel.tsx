@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { CRSystem } from "@/data/systems";
+import type { CRSystem, FamilyMeta } from "@/data/systems";
+import { FamilyPicker } from "./SystemControlPanel";
 
 export interface MissionLeg {
   label: string;
@@ -9,11 +10,13 @@ export interface MissionLeg {
 }
 
 interface BuilderLeg {
+  id: string;
   type: "orbit" | "manifold_departure" | "manifold_arrival";
   family: string;
   libr: number | null;
   branch: string | null;
   label: string;
+  color: string;
 }
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
@@ -38,8 +41,16 @@ export function MissionPanel({ legs, totalDuration, onClose, selectedSystem, onM
   const [isFlyingMission, setIsFlyingMission] = useState(false);
 
   function addLeg() {
-    const firstFamily = selectedSystem?.families[0]?.id ?? "lyapunov";
-    setBuilderLegs(prev => [...prev, { type: "orbit", family: firstFamily, libr: null, branch: null, label: "" }]);
+    const firstFamily = selectedSystem?.families[0];
+    setBuilderLegs(prev => [...prev, {
+      id: `${Date.now()}-${Math.random()}`,
+      type: "orbit",
+      family: firstFamily?.id ?? "lyapunov",
+      libr: null,
+      branch: null,
+      label: "",
+      color: firstFamily?.color ?? "#00FFFF",
+    }]);
   }
 
   function removeLeg(i: number) {
@@ -123,33 +134,39 @@ export function MissionPanel({ legs, totalDuration, onClose, selectedSystem, onM
             Build Sequence
           </div>
           {builderLegs.map((leg, i) => {
-            const fam = selectedSystem.families.find(f => f.id === leg.family);
+            const famObj = selectedSystem.families.find(f => f.id === leg.family) ?? null;
             return (
-              <div key={i} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+              <div key={leg.id} style={{ display: "flex", gap: 4, alignItems: "flex-start", marginBottom: 6, flexWrap: "wrap" }}>
                 <select style={{ ...SEL, flex: "0 0 auto" }} value={leg.type}
                   onChange={e => updateLeg(i, { type: e.target.value as BuilderLeg["type"] })}>
                   <option value="orbit">Orbit</option>
                   <option value="manifold_departure">Depart</option>
                   <option value="manifold_arrival">Arrive</option>
                 </select>
-                <select style={{ ...SEL, flex: "1 1 80px" }} value={leg.family}
-                  onChange={e => updateLeg(i, { family: e.target.value, libr: null, branch: null })}>
-                  {selectedSystem.families.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-                {fam?.requiresLibr && (
-                  <select style={{ ...SEL, flex: "0 0 40px" }} value={leg.libr ?? ""}
-                    onChange={e => updateLeg(i, { libr: e.target.value ? Number(e.target.value) : null })}>
-                    <option value="">L?</option>
-                    {fam.availableLibr.map(n => <option key={n} value={n}>L{n}</option>)}
-                  </select>
-                )}
-                {fam?.requiresBranch && (
-                  <select style={{ ...SEL, flex: "0 0 40px" }} value={leg.branch ?? ""}
-                    onChange={e => updateLeg(i, { branch: e.target.value || null })}>
-                    <option value="">?</option>
-                    {fam.availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                )}
+                <div style={{ flex: "1 1 120px", minWidth: 0 }}>
+                  <FamilyPicker
+                    families={selectedSystem.families}
+                    selectedFamily={famObj}
+                    selectedLibr={leg.libr}
+                    selectedBranch={leg.branch}
+                    onSelect={(fam: FamilyMeta, libr: number | null, branch: string | null) => {
+                      const typeLabel = leg.type === "orbit" ? "orbit"
+                        : leg.type === "manifold_departure" ? "departure" : "arrival";
+                      let lbl = fam.label;
+                      if (libr != null) lbl += ` L${libr}`;
+                      if (branch) lbl += ` ${branch}`;
+                      lbl += ` ${typeLabel}`;
+                      updateLeg(i, { family: fam.id, libr, branch, label: lbl, color: fam.color });
+                    }}
+                    direction="down"
+                  />
+                </div>
+                <input
+                  value={leg.label}
+                  onChange={e => updateLeg(i, { label: e.target.value })}
+                  placeholder="label"
+                  style={{ ...SEL, flex: "1 1 60px", minWidth: 0 }}
+                />
                 <button onClick={() => removeLeg(i)}
                   style={{ background: "none", border: "none", color: "#ff4444", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>
                   ✕

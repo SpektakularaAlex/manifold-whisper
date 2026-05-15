@@ -257,7 +257,7 @@ export function useScene(
     new THREE.TextureLoader().load(
       "https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/moon_1024.jpg",
       (texture) => {
-        moonMesh.material = new THREE.MeshPhongMaterial({ map: texture, bumpScale: 0.002 });
+        moonMesh.material = new THREE.MeshPhongMaterial({ map: texture, bumpScale: 10 });
       },
     );
 
@@ -620,25 +620,25 @@ export function useScene(
         trajGroupRef.current.set(id, [mesh]);
         registryRef.current.set(id, {
           id,
-          label:      `${familyKey} · C ${orb.jacobi.toFixed(3)}`,
-          color:      `#${col.getHexString()}`,
+          label: `${familyKey} · C ${orb.jacobi.toFixed(3)}`,
+          color: `#${col.getHexString()}`,
           familyKey,
-          family:     familyKey.split("_")[0],
-          period:     orb.period_tu,
+          family: familyKey.split("_")[0],
+          period: orb.period_tu,
           periodDays: orb.period_days,
-          jacobi:     orb.jacobi,
-          stability:  orb.stability,
+          jacobi: orb.jacobi,
+          stability: orb.stability,
           orbitIndex: orb.index,
           pointCount: orb.trajectory.length,
-          object:     mesh,
+          object: mesh,
         });
         familyOrbitsRef.current.push({
           id, mesh, mat,
-          jacobi:      orb.jacobi,
-          period_tu:   orb.period_tu,
+          jacobi: orb.jacobi,
+          period_tu: orb.period_tu,
           period_days: orb.period_days,
-          stability:   orb.stability,
-          index:       orb.index,
+          stability: orb.stability,
+          index: orb.index,
           familyKey,
         });
       }

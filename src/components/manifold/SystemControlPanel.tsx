@@ -51,6 +51,138 @@ function Ctrl({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
+interface FamilyPickerProps {
+  families: FamilyMeta[]
+  selectedFamily: FamilyMeta | null
+  selectedLibr: number | null
+  selectedBranch: string | null
+  onSelect: (family: FamilyMeta, libr: number | null, branch: string | null) => void
+  direction?: "up" | "down"
+}
+
+export function FamilyPicker({
+  families, selectedFamily, selectedLibr, selectedBranch, onSelect, direction = "up",
+}: FamilyPickerProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [expandedFamily, setExpandedFamily] = useState<string | null>(null)
+  const pickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleOutside)
+    return () => document.removeEventListener("mousedown", handleOutside)
+  }, [])
+
+  function getTriggerLabel(): string {
+    if (!selectedFamily) return "Select family ▼"
+    let label = selectedFamily.label
+    if (selectedLibr != null) label += ` · L${selectedLibr}`
+    if (selectedBranch) label += ` · ${selectedBranch}`
+    return label + " ▼"
+  }
+
+  function getSubItems(fam: FamilyMeta): Array<{ libr: number | null; branch: string | null; label: string }> {
+    if (fam.requiresLibr && fam.requiresBranch) {
+      const items: Array<{ libr: number | null; branch: string | null; label: string }> = []
+      for (const l of fam.availableLibr) {
+        for (const b of fam.availableBranches) {
+          items.push({ libr: l, branch: b, label: `L${l} · ${b === "N" ? "North" : "South"}` })
+        }
+      }
+      return items
+    }
+    if (fam.requiresLibr) {
+      return fam.availableLibr.map(l => ({ libr: l, branch: null, label: `L${l}` }))
+    }
+    if (fam.requiresBranch) {
+      return fam.availableBranches.map(b => ({ libr: null, branch: b, label: b === "N" ? "North" : "South" }))
+    }
+    return []
+  }
+
+  return (
+    <div ref={pickerRef} style={{ position: "relative", minWidth: 160 }}>
+      <button
+        onClick={() => setIsOpen(prev => !prev)}
+        style={{ ...SEL, width: "100%", textAlign: "left" as const, minWidth: 160 }}
+      >
+        {getTriggerLabel()}
+      </button>
+      {isOpen && (
+        <div style={{
+          position: "absolute",
+          ...(direction === "up" ? { bottom: "100%", marginBottom: 2 } : { top: "100%", marginTop: 2 }),
+          left: 0,
+          zIndex: 200,
+          background: "rgba(0,8,14,0.97)",
+          border: "1px solid rgba(0,255,255,0.3)",
+          maxHeight: 280,
+          overflowY: "auto" as const,
+          minWidth: 200,
+        }}>
+          {families.map(fam => {
+            const isLeaf = !fam.requiresLibr && !fam.requiresBranch
+            const expanded = expandedFamily === fam.id
+            const famSelected = selectedFamily?.id === fam.id && isLeaf
+
+            return (
+              <div key={fam.id}>
+                <div
+                  onClick={() => {
+                    if (isLeaf) { onSelect(fam, null, null); setIsOpen(false) }
+                    else setExpandedFamily(expanded ? null : fam.id)
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)" }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = famSelected ? "rgba(0,255,255,0.15)" : "transparent" }}
+                  style={{
+                    padding: "6px 10px",
+                    cursor: "pointer",
+                    color: famSelected ? "var(--manifold-cyan)" : "#e0eeff",
+                    background: famSelected ? "rgba(0,255,255,0.15)" : "transparent",
+                    fontFamily: "'Space Mono', monospace",
+                    fontSize: 11,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {!isLeaf && <span style={{ fontSize: 8, opacity: 0.7 }}>{expanded ? "▼" : "▶"}</span>}
+                  {fam.label}
+                </div>
+                {!isLeaf && expanded && getSubItems(fam).map(sub => {
+                  const sel = selectedFamily?.id === fam.id && selectedLibr === sub.libr && selectedBranch === sub.branch
+                  return (
+                    <div
+                      key={`${sub.libr}-${sub.branch}`}
+                      onClick={() => { onSelect(fam, sub.libr, sub.branch); setIsOpen(false) }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.06)" }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = sel ? "rgba(0,255,255,0.15)" : "transparent" }}
+                      style={{
+                        padding: "5px 10px 5px 24px",
+                        cursor: "pointer",
+                        color: sel ? "var(--manifold-cyan)" : "rgba(200,220,240,0.7)",
+                        background: sel ? "rgba(0,255,255,0.15)" : "transparent",
+                        fontFamily: "'Space Mono', monospace",
+                        fontSize: 10,
+                      }}
+                    >
+                      {sub.label}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SystemControlPanel({
   selectedSystem,
   preSelectedFamilyId,
@@ -81,11 +213,10 @@ export function SystemControlPanel({
     setMemberIndex(0)
   }, [preSelectedFamilyId, selectedSystem])
 
-  function handleFamilyChange(famId: string) {
-    const fam = selectedSystem.families.find(f => f.id === famId) ?? null
+  function handleFamilySelect(fam: FamilyMeta, libr: number | null, branch: string | null) {
     setSelectedFamily(fam)
-    setSelectedLibr(null)
-    setSelectedBranch(null)
+    setSelectedLibr(libr)
+    setSelectedBranch(branch)
     setMemberIndex(0)
   }
 
@@ -134,47 +265,15 @@ export function SystemControlPanel({
     >
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, flexWrap: "wrap" }}>
         <Ctrl label="Family">
-          <select
-            style={{ ...SEL, minWidth: 140 }}
-            value={selectedFamily?.id ?? ""}
-            onChange={e => handleFamilyChange(e.target.value)}
-          >
-            <option value="">— select family —</option>
-            {selectedSystem.families.map(f => (
-              <option key={f.id} value={f.id}>{f.label}</option>
-            ))}
-          </select>
+          <FamilyPicker
+            families={selectedSystem.families}
+            selectedFamily={selectedFamily}
+            selectedLibr={selectedLibr}
+            selectedBranch={selectedBranch}
+            onSelect={handleFamilySelect}
+            direction="up"
+          />
         </Ctrl>
-
-        {selectedFamily?.requiresLibr && (
-          <Ctrl label="L-Point">
-            <select
-              style={{ ...SEL, minWidth: 70 }}
-              value={selectedLibr ?? ""}
-              onChange={e => setSelectedLibr(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">—</option>
-              {selectedFamily.availableLibr.map(n => (
-                <option key={n} value={n}>L{n}</option>
-              ))}
-            </select>
-          </Ctrl>
-        )}
-
-        {selectedFamily?.requiresBranch && (
-          <Ctrl label="Branch">
-            <select
-              style={{ ...SEL, minWidth: 70 }}
-              value={selectedBranch ?? ""}
-              onChange={e => setSelectedBranch(e.target.value || null)}
-            >
-              <option value="">—</option>
-              {selectedFamily.availableBranches.map(b => (
-                <option key={b} value={b}>{b === "N" ? "North" : "South"}</option>
-              ))}
-            </select>
-          </Ctrl>
-        )}
 
         <Ctrl label={`Member ${memberIndex + 1} / ${maxMembers + 1}`}>
           <input

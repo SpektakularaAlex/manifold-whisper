@@ -8,7 +8,7 @@ import logging
 import numpy as np
 
 from cr3bp import MU, propagate
-from ic_cache import get_ic, IC_CACHE
+from ic_cache import get_ic, IC_CACHE, get_mu_for_system
 from manifolds import compute_manifold
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,7 @@ def _family_color(agent_family: str) -> str:
 # ── Agent-driven mission builder ─────────────────────────────────────────────
 
 def build_mission(legs: list[dict], system: str = "earth-moon", mu: float = MU) -> dict:
+    mu = get_mu_for_system(system)
     built: list[dict] = []
     for leg in legs:
         leg_type = leg.get("type", "")
@@ -99,9 +100,11 @@ def build_mission(legs: list[dict], system: str = "earth-moon", mu: float = MU) 
     total_traj: list[list[float]] = []
     total_duration = 0.0
     for b in built:
+        logger.info("Leg %s: %d points, color %s", b["type"], len(b["trajectory"]), b["color"])
         total_traj.extend(b["trajectory"])
         total_duration += b["duration"]
 
+    logger.info("Mission total: %d legs, %d total points", len(built), len(total_traj))
     return {
         "legs":             built,
         "total_trajectory": total_traj,
@@ -130,6 +133,7 @@ def _build_manifold_leg(leg: dict, mu: float, out: list, arrival: bool) -> None:
 
     plus_tubes, minus_tubes = compute_manifold(
         ic, mu=mu, stable=is_stable, n_branches=20,
+        t_forward=3.5, t_backward=3.5,
     )
     all_tubes = plus_tubes + minus_tubes
     if not all_tubes:

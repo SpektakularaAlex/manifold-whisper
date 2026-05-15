@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { CRSystem } from "@/data/systems"
 
 interface SystemMiniMapProps {
@@ -34,6 +34,27 @@ function toSVG(r: number, angleDeg: number): { x: number; y: number } {
 
 export function SystemMiniMap({ systems, selectedSystem, onSystemChange }: SystemMiniMapProps) {
   const [hovered, setHovered] = useState<string | null>(null)
+  const [position, setPosition] = useState({ x: window.innerWidth - 220, y: 80 })
+  const [isDragging, setIsDragging] = useState(false)
+  const dragOffset = useRef({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return
+      setPosition({
+        x: Math.max(0, Math.min(window.innerWidth - 220, e.clientX - dragOffset.current.x)),
+        y: Math.max(0, Math.min(window.innerHeight - 240, e.clientY - dragOffset.current.y)),
+      })
+    }
+    const handleMouseUp = () => setIsDragging(false)
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [isDragging])
 
   // Deduplicate orbit rings by radius
   const rings = new Set<number>()
@@ -44,16 +65,31 @@ export function SystemMiniMap({ systems, selectedSystem, onSystemChange }: Syste
 
   return (
     <div
+      ref={containerRef}
       className="manifold-panel"
+      onMouseDown={(e) => {
+        if ((e.target as Element).tagName === "circle") return
+        setIsDragging(true)
+        dragOffset.current = {
+          x: e.clientX - position.x,
+          y: e.clientY - position.y,
+        }
+        e.preventDefault()
+      }}
       style={{
         position: "fixed",
-        bottom: 28,
-        right: 20,
+        left: position.x,
+        top: position.y,
         width: 210,
         zIndex: 15,
         padding: "10px 12px",
+        cursor: isDragging ? "grabbing" : "grab",
+        userSelect: "none",
       }}
     >
+      <div style={{ fontSize: 8, color: "rgba(200,220,240,0.3)", letterSpacing: "0.12em", marginBottom: 4, fontFamily: "'Space Mono', monospace" }}>
+        ⠿ DRAG
+      </div>
       <div
         className="manifold-mono"
         style={{ color: "var(--manifold-cyan)", fontSize: 9, letterSpacing: "0.15em", marginBottom: 8, textTransform: "uppercase" }}
