@@ -140,10 +140,21 @@ function Index() {
   const handleSystemChange = useCallback((system: CRSystem) => {
     setSelectedSystem(system);
     sceneRef.current?.clearTrajectories();
+    sceneRef.current?.updateSystemBodies(system.bodyConfig);
+    sceneRef.current?.updateLagrangePoints(system.lagrangePoints);
+    sceneRef.current?.showLagrangePoints(false);
     setLastOrbitMeta(null);
     setPreSelectedFamilyId(null);
     setConceptContent(null);
   }, []);
+
+  // Apply Earth-Moon body config once the scene is ready
+  React.useEffect(() => {
+    if (sceneAPI) {
+      sceneAPI.updateSystemBodies(SYSTEMS[0].bodyConfig);
+      sceneAPI.updateLagrangePoints(SYSTEMS[0].lagrangePoints);
+    }
+  }, [sceneAPI]);
 
   const handleSearchSelectSystem = useCallback((systemId: string) => {
     const sys = SYSTEMS.find(s => s.id === systemId);

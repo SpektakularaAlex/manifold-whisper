@@ -9,6 +9,17 @@ export interface FamilyMeta {
   color: string
 }
 
+export interface SystemBodyConfig {
+  primaryColor: string
+  secondaryColor: string
+  primaryRadius: number
+  secondaryRadius: number
+  secondaryDistance: number
+  primaryName: string
+  secondaryName: string
+  showRings: boolean
+}
+
 export interface CRSystem {
   id: string
   label: string
@@ -22,6 +33,14 @@ export interface CRSystem {
   distanceKm: number
   realMissions: string[]
   families: FamilyMeta[]
+  bodyConfig: SystemBodyConfig
+  lagrangePoints: {
+    L1: [number, number, number]
+    L2: [number, number, number]
+    L3: [number, number, number]
+    L4: [number, number, number]
+    L5: [number, number, number]
+  }
 }
 
 export interface SearchEntry {
@@ -67,7 +86,24 @@ export const SYSTEMS: CRSystem[] = [
         availableLibr: [2], availableBranches: ["N", "S"],
         description: "Highly elongated halo orbits with close lunar passes. Gateway's planned orbit.",
         color: "#FFD700" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#4488ff",
+      secondaryColor: "#aaaaaa",
+      primaryRadius: 0.10,
+      secondaryRadius: 0.038,
+      secondaryDistance: 0.98785,
+      primaryName: "Earth",
+      secondaryName: "Moon",
+      showRings: false,
+    },
+    lagrangePoints: {
+      L1: [0.8369, 0, 0],
+      L2: [1.1557, 0, 0],
+      L3: [-1.0051, 0, 0],
+      L4: [0.4878, 0.8660, 0],
+      L5: [0.4878, -0.8660, 0],
+    },
   },
   {
     id: "sun-earth",
@@ -94,7 +130,24 @@ export const SYSTEMS: CRSystem[] = [
         availableLibr: [], availableBranches: [],
         description: "Large stable retrograde orbits in the Sun-Earth system.",
         color: "#FFD700" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#FFD700",
+      secondaryColor: "#4488ff",
+      primaryRadius: 0.25,
+      secondaryRadius: 0.04,
+      secondaryDistance: 0.999997,
+      primaryName: "Sun",
+      secondaryName: "Earth",
+      showRings: false,
+    },
+    lagrangePoints: {
+      L1: [0.9900, 0, 0],
+      L2: [1.0100, 0, 0],
+      L3: [-1.0000, 0, 0],
+      L4: [0.4999, 0.8660, 0],
+      L5: [0.4999, -0.8660, 0],
+    },
   },
   {
     id: "jupiter-europa",
@@ -118,7 +171,24 @@ export const SYSTEMS: CRSystem[] = [
       { id: "dro", label: "Distant Retrograde", requiresLibr: false, requiresBranch: false,
         availableLibr: [], availableBranches: [],
         description: "Stable retrograde orbits providing long-term Europa coverage.", color: "#FFD700" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#C88B3A",
+      secondaryColor: "#D4C9A8",
+      primaryRadius: 0.22,
+      secondaryRadius: 0.020,
+      secondaryDistance: 0.999975,
+      primaryName: "Jupiter",
+      secondaryName: "Europa",
+      showRings: false,
+    },
+    lagrangePoints: {
+      L1: [0.9361, 0, 0],
+      L2: [1.0659, 0, 0],
+      L3: [-1.0000, 0, 0],
+      L4: [0.4999, 0.8660, 0],
+      L5: [0.4999, -0.8660, 0],
+    },
   },
   {
     id: "saturn-enceladus",
@@ -139,7 +209,24 @@ export const SYSTEMS: CRSystem[] = [
       { id: "lyapunov", label: "Lyapunov", requiresLibr: true, requiresBranch: false,
         availableLibr: [1, 2], availableBranches: [],
         description: "Planar periodic orbits in Saturn-Enceladus rotating frame.", color: "#00FFFF" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#E8D5A3",
+      secondaryColor: "#EEEEEE",
+      primaryRadius: 0.20,
+      secondaryRadius: 0.008,
+      secondaryDistance: 0.9999999,
+      primaryName: "Saturn",
+      secondaryName: "Enceladus",
+      showRings: true,
+    },
+    lagrangePoints: {
+      L1: [0.9982, 0, 0],
+      L2: [1.0018, 0, 0],
+      L3: [-1.0000, 0, 0],
+      L4: [0.5000, 0.8660, 0],
+      L5: [0.5000, -0.8660, 0],
+    },
   },
   {
     id: "saturn-titan",
@@ -163,7 +250,24 @@ export const SYSTEMS: CRSystem[] = [
       { id: "dro", label: "Distant Retrograde", requiresLibr: false, requiresBranch: false,
         availableLibr: [], availableBranches: [],
         description: "Stable large retrograde orbits in the Saturn-Titan system.", color: "#FFD700" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#E8D5A3",
+      secondaryColor: "#D4A017",
+      primaryRadius: 0.20,
+      secondaryRadius: 0.030,
+      secondaryDistance: 0.9998,
+      primaryName: "Saturn",
+      secondaryName: "Titan",
+      showRings: true,
+    },
+    lagrangePoints: {
+      L1: [0.9575, 0, 0],
+      L2: [1.0433, 0, 0],
+      L3: [-1.0001, 0, 0],
+      L4: [0.4998, 0.8660, 0],
+      L5: [0.4998, -0.8660, 0],
+    },
   },
   {
     id: "mars-phobos",
@@ -184,7 +288,24 @@ export const SYSTEMS: CRSystem[] = [
       { id: "lyapunov", label: "Lyapunov", requiresLibr: true, requiresBranch: false,
         availableLibr: [1, 2], availableBranches: [],
         description: "Planar periodic orbits in Mars-Phobos rotating frame.", color: "#00FFFF" },
-    ]
+    ],
+    bodyConfig: {
+      primaryColor: "#C1440E",
+      secondaryColor: "#8B7355",
+      primaryRadius: 0.10,
+      secondaryRadius: 0.004,
+      secondaryDistance: 0.9999,
+      primaryName: "Mars",
+      secondaryName: "Phobos",
+      showRings: false,
+    },
+    lagrangePoints: {
+      L1: [0.9999, 0, 0],
+      L2: [1.0001, 0, 0],
+      L3: [-1.0000, 0, 0],
+      L4: [0.5000, 0.8660, 0],
+      L5: [0.5000, -0.8660, 0],
+    },
   }
 ]
 

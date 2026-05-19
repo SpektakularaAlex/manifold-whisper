@@ -6,6 +6,7 @@ All values are non-dimensional CR3BP units.
 """
 
 import csv
+import json
 import logging
 from pathlib import Path
 
@@ -22,6 +23,15 @@ MU_BY_SYSTEM: dict[str, float] = {
 
 def get_mu_for_system(system_id: str) -> float:
     return MU_BY_SYSTEM.get(system_id, 0.01215058560962404)
+
+_SYSTEM_FOLDER: dict[str, str] = {
+    "earth-moon":       "Earth-Moon",
+    "sun-earth":        "Sun-Earth",
+    "jupiter-europa":   "Jupiter-Europa",
+    "saturn-enceladus": "Saturn-Enceladus",
+    "saturn-titan":     "Saturn-Titan",
+    "mars-phobos":      "Mars-Phobos",
+}
 
 # ── CSV filename → (family, libr, branch) ─────────────────────────────────────
 
@@ -59,8 +69,8 @@ _CSV_MAP: dict[str, tuple[str, int | None, str | None]] = {
     "Low_Prograde_West.csv":  ("low_prograde",     None, "W"),
 }
 
-# Module-level in-memory store
-IC_CACHE: dict[str, list[dict]] = {}
+# Module-level in-memory store: IC_CACHE[system_id][family_key] = [ic, ...]
+IC_CACHE: dict[str, dict[str, list[dict]]] = {}
 
 
 # ── Key helpers ────────────────────────────────────────────────────────────────
@@ -123,64 +133,131 @@ def _load_csv(csv_path: Path, family: str, libr: int | None, branch: str | None)
     return ics
 
 
-def load_all_families() -> None:
-    """Load all CSV families into IC_CACHE. Called once at module import."""
+def load_all_families(system_id: str = "Earth-Moon") -> None:
+    """Load all CSV families for a system into IC_CACHE."""
     ic_dir = _find_ic_orbits_dir()
     if ic_dir is None:
-        logger.error("IC_Orbits/ directory not found — orbit endpoints will fail.")
+        logger.warning("IC_Orbits directory not found")
         return
 
-    logger.info("Loading IC families from %s", ic_dir)
+    key_id = system_id.lower()
+    folder = _SYSTEM_FOLDER.get(key_id, system_id)
+    system_dir = ic_dir / folder
+    if not system_dir.exists():
+        logger.warning("No IC subfolder found for system: %s", system_id)
+        logger.warning("Expected: %s", system_dir)
+        return
+
+    logger.info("Loading ICs for %s from %s", system_id, system_dir)
+    IC_CACHE.setdefault(key_id, {})
+
     for filename, (family, libr, branch) in _CSV_MAP.items():
-        csv_path = ic_dir / filename
+        csv_path = system_dir / filename
         if not csv_path.exists():
             logger.warning("  Missing CSV: %s", csv_path)
             continue
         key = _make_key(family, libr, branch)
         ics = _load_csv(csv_path, family, libr, branch)
         ics.sort(key=lambda ic: ic["jacobi"])
-        IC_CACHE[key] = ics
+        IC_CACHE[key_id][key] = ics
         logger.info("  %-22s %4d orbits", key, len(ics))
 
-    logger.info("IC cache ready: %d families, %d total orbits",
-                len(IC_CACHE), sum(len(v) for v in IC_CACHE.values()))
+    loaded = sum(len(v) for v in IC_CACHE[key_id].values())
+    logger.info("IC cache ready for %s: %d families, %d total orbits",
+                system_id, len(IC_CACHE[key_id]), loaded)
 
 
 # ── Lookup API ─────────────────────────────────────────────────────────────────
 
-def get_family(family: str, libr: int | None, branch: str | None) -> list[dict]:
+def get_family(family: str, libr: int | None, branch: str | None, system_id: str = "earth-moon") -> list[dict]:
     key = _make_key(family, libr, branch)
-    if key not in IC_CACHE:
+    system_cache = IC_CACHE.get(system_id.lower(), {})
+    if key not in system_cache:
         raise KeyError(
-            f"Family '{key}' not found in cache. Available: {list(IC_CACHE.keys())}")
-    return IC_CACHE[key]
+            f"Family '{key}' not found for system '{system_id}'. Available: {list(system_cache.keys())}")
+    return system_cache[key]
 
 
 def get_ic(
-    family: str,
-    libr:   int | None,
-    branch: str | None,
-    index:  int = 0,
+    family:    str,
+    libr:      int | None,
+    branch:    str | None,
+    index:     int = 0,
+    system_id: str = "earth-moon",
 ) -> dict:
-    ics = get_family(family, libr, branch)
+    ics = get_family(family, libr, branch, system_id)
     idx = max(0, min(index, len(ics) - 1))
     return ics[idx]
 
 
 def find_by_jacobi(
-    family: str,
-    libr:   int | None,
-    branch: str | None,
+    family:        str,
+    libr:          int | None,
+    branch:        str | None,
     target_jacobi: float,
+    system_id:     str = "earth-moon",
 ) -> dict:
-    ics = get_family(family, libr, branch)
+    ics = get_family(family, libr, branch, system_id)
     return min(ics, key=lambda ic: abs(ic["jacobi"] - target_jacobi))
 
 
 def cache_summary() -> dict[str, int]:
-    return {k: len(v) for k, v in IC_CACHE.items()}
+    result = {}
+    for sys_id, families in IC_CACHE.items():
+        for key, ics in families.items():
+            result[f"{sys_id}:{key}"] = len(ics)
+    return result
+
+
+# ── On-demand system loading ───────────────────────────────────────────────────
+
+def _load_system_from_json(system_id: str, system_dir: Path) -> None:
+    """Load all JSON files in system_dir into IC_CACHE[system_id]."""
+    IC_CACHE[system_id] = {}
+    loaded = 0
+    for json_file in sorted(system_dir.glob("*.json")):
+        try:
+            with open(json_file) as f:
+                records = json.load(f)
+            if not records:
+                continue
+            key = json_file.stem
+            IC_CACHE[system_id][key] = records
+            loaded += len(records)
+            logger.info("  %s/%s: %d ICs", system_id, key, len(records))
+        except Exception as e:
+            logger.warning("Failed to load %s: %s", json_file, e)
+    logger.info("Loaded %d total ICs for %s", loaded, system_id)
+
+
+def ensure_system_loaded(system_id: str) -> bool:
+    """
+    Load a system's ICs if not already in cache.
+    Returns True if system is available, False if not.
+    """
+    key_id = system_id.lower()
+    if key_id in IC_CACHE and len(IC_CACHE[key_id]) > 0:
+        return True
+
+    ic_dir = _find_ic_orbits_dir()
+    if ic_dir is None:
+        return False
+
+    folder = _SYSTEM_FOLDER.get(key_id, system_id)
+    system_dir = ic_dir / folder
+    if not system_dir.exists():
+        logger.warning("No IC data found for system: %s", system_id)
+        return False
+
+    json_files = list(system_dir.glob("*.json"))
+    if json_files:
+        _load_system_from_json(key_id, system_dir)
+        return key_id in IC_CACHE and len(IC_CACHE[key_id]) > 0
+
+    load_all_families(system_id)
+    return key_id in IC_CACHE and len(IC_CACHE[key_id]) > 0
 
 
 # ── Load at import time ────────────────────────────────────────────────────────
 
-load_all_families()
+load_all_families("Earth-Moon")

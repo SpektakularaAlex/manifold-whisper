@@ -191,9 +191,10 @@ async def health():
 # ── /families ─────────────────────────────────────────────────────────────────
 
 @app.get("/families")
-async def families_endpoint():
+async def families_endpoint(system: str = "earth-moon"):
     result: dict = {}
-    for key, ics in ic_cache.IC_CACHE.items():
+    system_cache = ic_cache.IC_CACHE.get(system.lower(), {})
+    for key, ics in system_cache.items():
         if not ics:
             continue
         meta = FAMILY_META.get(key, {"label": key, "color": "#AAAAAA"})
@@ -218,7 +219,7 @@ async def family_endpoint(
     family_key: str,
     n: int = Query(20, ge=1, le=100),
 ):
-    ics = ic_cache.IC_CACHE.get(family_key)
+    ics = ic_cache.IC_CACHE.get("earth-moon", {}).get(family_key)
     if not ics:
         raise HTTPException(status_code=404, detail=f"Family '{family_key}' not found")
 
@@ -253,8 +254,8 @@ async def family_endpoint(
 
 # ── Internal helpers (run blocking scipy in thread pool) ──────────────────────
 
-def _compute_family_sync(family_key: str, n: int) -> dict:
-    ics = ic_cache.IC_CACHE.get(family_key)
+def _compute_family_sync(family_key: str, n: int, system: str = "earth-moon") -> dict:
+    ics = ic_cache.IC_CACHE.get(system.lower(), {}).get(family_key)
     if not ics:
         raise KeyError(f"Family '{family_key}' not found in cache.")
     total   = len(ics)
@@ -285,9 +286,10 @@ def _compute_family_sync(family_key: str, n: int) -> dict:
 
 
 def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index: int, system: str = "earth-moon") -> dict:
+    ic_cache.ensure_system_loaded(system)
     mu   = ic_cache.get_mu_for_system(system)
-    ic   = ic_cache.get_ic(family, libr, branch, index)
-    fam  = ic_cache.get_family(family, libr, branch)
+    ic   = ic_cache.get_ic(family, libr, branch, index, system_id=system)
+    fam  = ic_cache.get_family(family, libr, branch, system_id=system)
     T2   = 2.0 * ic["period"]
     traj = cr3bp.propagate(ic["state"], T2, mu, n_points=500)
     xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in traj]
@@ -305,8 +307,9 @@ def _compute_manifold_sync(
     index: int, manifold_type: str,
     n_branches: int, propagation_time: float, system: str,
 ) -> dict:
+    ic_cache.ensure_system_loaded(system)
     mu     = ic_cache.get_mu_for_system(system)
-    ic     = ic_cache.get_ic(family, libr, branch, index)
+    ic     = ic_cache.get_ic(family, libr, branch, index, system_id=system)
     result: dict = {"type": manifold_type}
     tubes: list  = []
 

@@ -7,6 +7,17 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { Tween, Easing, update as tweenUpdate } from "@tweenjs/tween.js";
 
+export interface SystemBodyConfig {
+  primaryColor: string
+  secondaryColor: string
+  primaryRadius: number
+  secondaryRadius: number
+  secondaryDistance: number
+  primaryName: string
+  secondaryName: string
+  showRings: boolean
+}
+
 const MU = 0.01215058560962404;
 const DEFAULT_CAM_POS = { x: 0, y: -2.5, z: 1.2 } as const;
 const DEFAULT_CAM_TARGET = new THREE.Vector3(0.5, 0, 0);
@@ -72,6 +83,14 @@ export interface SceneAPI {
   showLagrangePoints(show: boolean): void;
   animateSpacecraft(path: [number, number, number][], duration: number): void;
   stopSpacecraft(): void;
+  updateSystemBodies(config: SystemBodyConfig): void;
+  updateLagrangePoints(points: {
+    L1: [number, number, number]
+    L2: [number, number, number]
+    L3: [number, number, number]
+    L4: [number, number, number]
+    L5: [number, number, number]
+  }): void;
 }
 
 interface SceneOptions {
@@ -223,6 +242,7 @@ export function useScene(
     // ── Earth ─────────────────────────────────────────────────────────────
     const earthMat = new THREE.MeshPhongMaterial({ color: 0x2244aa, shininess: 60 });
     const earthMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 32, 32), earthMat);
+    earthMesh.name = "primaryBody";
     earthMesh.position.set(-MU, 0, 0);
     scene.add(earthMesh);
     new THREE.TextureLoader().load(
@@ -252,6 +272,7 @@ export function useScene(
     // ── Moon ──────────────────────────────────────────────────────────────
     const moonMat = new THREE.MeshPhongMaterial({ color: 0xaaaaaa, shininess: 20 });
     const moonMesh = new THREE.Mesh(new THREE.SphereGeometry(0.038, 24, 24), moonMat);
+    moonMesh.name = "secondaryBody";
     moonMesh.position.set(1 - MU, 0, 0);
     scene.add(moonMesh);
     new THREE.TextureLoader().load(
@@ -281,6 +302,7 @@ export function useScene(
       const label = makeLabel(name);
       label.position.set(0, 0.05, 0);
       const group = new THREE.Group();
+      group.name = `LP_${name}`;
       group.position.set(x, y, z);
       group.add(sphere, label);
       lagrangeGroup.add(group);
@@ -740,6 +762,64 @@ export function useScene(
     if (spacecraftRef.current) spacecraftRef.current.visible = false;
   }, []);
 
+  const updateSystemBodies = useCallback((config: SystemBodyConfig) => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+
+    const primary = scene.getObjectByName("primaryBody");
+    if (primary instanceof THREE.Mesh) {
+      (primary.material as THREE.MeshPhongMaterial).color.set(config.primaryColor);
+      primary.scale.setScalar(config.primaryRadius / 0.10);
+    }
+
+    const secondary = scene.getObjectByName("secondaryBody");
+    if (secondary instanceof THREE.Mesh) {
+      (secondary.material as THREE.MeshPhongMaterial).color.set(config.secondaryColor);
+      secondary.scale.setScalar(config.secondaryRadius / 0.038);
+      secondary.position.set(config.secondaryDistance, 0, 0);
+    }
+
+    const existingRings = scene.getObjectByName("saturnRings");
+    if (existingRings) scene.remove(existingRings);
+    if (config.showRings) {
+      const primaryPos = primary?.position ?? new THREE.Vector3(-MU, 0, 0);
+      const ringGeo = new THREE.RingGeometry(
+        config.primaryRadius * 1.3,
+        config.primaryRadius * 2.2,
+        64,
+      );
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: "#C8A882",
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.5,
+      });
+      const rings = new THREE.Mesh(ringGeo, ringMat);
+      rings.name = "saturnRings";
+      rings.rotation.x = Math.PI / 2;
+      rings.position.copy(primaryPos);
+      scene.add(rings);
+    }
+  }, []);
+
+  const updateLagrangePoints = useCallback((points: {
+    L1: [number, number, number]
+    L2: [number, number, number]
+    L3: [number, number, number]
+    L4: [number, number, number]
+    L5: [number, number, number]
+  }) => {
+    const scene = threeSceneRef.current;
+    if (!scene) return;
+    (["L1", "L2", "L3", "L4", "L5"] as const).forEach((name) => {
+      const lp = scene.getObjectByName(`LP_${name}`);
+      if (lp) {
+        const coords = points[name];
+        lp.position.set(coords[0], coords[1], coords[2]);
+      }
+    });
+  }, []);
+
   return useMemo<SceneAPI>(
     () => ({
       addTrajectory,
@@ -754,9 +834,11 @@ export function useScene(
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
+      updateSystemBodies,
+      updateLagrangePoints,
     }),
     [addTrajectory, addManifoldTubes, addFamilyOrbits, clearFamily, highlightByJacobi,
       getMedianOrbit, setMissionSelectHighlight, clearTrajectories, resetCamera,
-      showLagrangePoints, animateSpacecraft, stopSpacecraft],
+      showLagrangePoints, animateSpacecraft, stopSpacecraft, updateSystemBodies, updateLagrangePoints],
   );
 }
