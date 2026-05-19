@@ -11,9 +11,9 @@ import { FamilyBrowserPanel } from "@/components/manifold/FamilyBrowserPanel";
 import { TransferPlannerPanel, type TransferResult } from "@/components/manifold/TransferPlannerPanel";
 import { FamilyControlsBar } from "@/components/manifold/FamilyControlsBar";
 import { useAgent } from "@/hooks/useAgent";
-import { executeCommand, type FamilyShownMeta } from "@/utils/sceneCommands";
+import { executeCommand, setSceneTransform, renderOrbit, type FamilyShownMeta } from "@/utils/sceneCommands";
 import type { AgentCommand } from "@/hooks/useAgent";
-import { SYSTEMS, type CRSystem, type SearchEntry } from "@/data/systems";
+import { SYSTEMS, transformedLagrangePoints, type CRSystem, type SearchEntry } from "@/data/systems";
 import { SystemControlPanel, type VisualizeParams } from "@/components/manifold/SystemControlPanel";
 import { SearchBar } from "@/components/manifold/SearchBar";
 import { SystemMiniMap } from "@/components/manifold/SystemMiniMap";
@@ -117,7 +117,13 @@ function Index() {
       const orbitData = await orbitRes.json() as { trajectory: [number, number, number][]; period?: number; jacobi?: number; total_members?: number };
       const famMeta = selectedSystem.families.find(f => f.id === family);
       const orbitColor = famMeta?.color ?? "#00FFFF";
-      sceneRef.current.addTrajectory(orbitData.trajectory, orbitColor, `${famMeta?.label ?? family} #${index + 1}`, {});
+      renderOrbit(
+        orbitData.trajectory,
+        `${famMeta?.label ?? family} #${index + 1}`,
+        orbitColor,
+        { period: orbitData.period, jacobi: orbitData.jacobi, family },
+        sceneRef.current,
+      );
       setLastOrbitMeta({ period: orbitData.period, jacobi: orbitData.jacobi, totalMembers: orbitData.total_members });
       if (showManifolds !== "none") {
         const mRes = await fetch(`${API_URL}/manifold`, {
@@ -140,19 +146,30 @@ function Index() {
   const handleSystemChange = useCallback((system: CRSystem) => {
     setSelectedSystem(system);
     sceneRef.current?.clearTrajectories();
-    sceneRef.current?.updateSystemBodies(system.bodyConfig);
-    sceneRef.current?.updateLagrangePoints(system.lagrangePoints);
+    setSceneTransform(system.sceneConfig.originShift, system.sceneConfig.displayScale);
+    sceneRef.current?.updateSystemBodies({
+      ...system.bodyConfig,
+      primaryScenePos: system.sceneConfig.primaryScenePos,
+      secondaryScenePos: system.sceneConfig.secondaryScenePos,
+    });
+    sceneRef.current?.updateLagrangePoints(transformedLagrangePoints(system));
     sceneRef.current?.showLagrangePoints(false);
+    sceneRef.current?.setCameraView(system.sceneConfig.cameraPos, system.sceneConfig.cameraTarget);
     setLastOrbitMeta(null);
     setPreSelectedFamilyId(null);
     setConceptContent(null);
   }, []);
 
-  // Apply Earth-Moon body config once the scene is ready
+  // Apply Earth-Moon config once the scene is ready
   React.useEffect(() => {
     if (sceneAPI) {
-      sceneAPI.updateSystemBodies(SYSTEMS[0].bodyConfig);
-      sceneAPI.updateLagrangePoints(SYSTEMS[0].lagrangePoints);
+      setSceneTransform([0, 0, 0], 1.0);
+      sceneAPI.updateSystemBodies({
+        ...SYSTEMS[0].bodyConfig,
+        primaryScenePos: SYSTEMS[0].sceneConfig.primaryScenePos,
+        secondaryScenePos: SYSTEMS[0].sceneConfig.secondaryScenePos,
+      });
+      sceneAPI.updateLagrangePoints(transformedLagrangePoints(SYSTEMS[0]));
     }
   }, [sceneAPI]);
 

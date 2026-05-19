@@ -16,6 +16,8 @@ export interface SystemBodyConfig {
   primaryName: string
   secondaryName: string
   showRings: boolean
+  primaryScenePos?: [number, number, number]
+  secondaryScenePos?: [number, number, number]
 }
 
 const MU = 0.01215058560962404;
@@ -83,6 +85,7 @@ export interface SceneAPI {
   showLagrangePoints(show: boolean): void;
   animateSpacecraft(path: [number, number, number][], duration: number): void;
   stopSpacecraft(): void;
+  setCameraView(position: [number, number, number], target: [number, number, number]): void;
   updateSystemBodies(config: SystemBodyConfig): void;
   updateLagrangePoints(points: {
     L1: [number, number, number]
@@ -762,6 +765,27 @@ export function useScene(
     if (spacecraftRef.current) spacecraftRef.current.visible = false;
   }, []);
 
+  const setCameraView = useCallback((
+    position: [number, number, number],
+    target: [number, number, number],
+  ) => {
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+    const fromPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    new Tween(fromPos)
+      .to({ x: position[0], y: position[1], z: position[2] }, 1200)
+      .easing(Easing.Cubic.InOut)
+      .onUpdate(() => { camera.position.set(fromPos.x, fromPos.y, fromPos.z); controls.update(); })
+      .start();
+    const fromTarget = { x: controls.target.x, y: controls.target.y, z: controls.target.z };
+    new Tween(fromTarget)
+      .to({ x: target[0], y: target[1], z: target[2] }, 1200)
+      .easing(Easing.Cubic.InOut)
+      .onUpdate(() => { controls.target.set(fromTarget.x, fromTarget.y, fromTarget.z); controls.update(); })
+      .start();
+  }, []);
+
   const updateSystemBodies = useCallback((config: SystemBodyConfig) => {
     const scene = threeSceneRef.current;
     if (!scene) return;
@@ -770,13 +794,15 @@ export function useScene(
     if (primary instanceof THREE.Mesh) {
       (primary.material as THREE.MeshPhongMaterial).color.set(config.primaryColor);
       primary.scale.setScalar(config.primaryRadius / 0.10);
+      if (config.primaryScenePos) primary.position.set(...config.primaryScenePos);
     }
 
     const secondary = scene.getObjectByName("secondaryBody");
     if (secondary instanceof THREE.Mesh) {
       (secondary.material as THREE.MeshPhongMaterial).color.set(config.secondaryColor);
       secondary.scale.setScalar(config.secondaryRadius / 0.038);
-      secondary.position.set(config.secondaryDistance, 0, 0);
+      const secPos = config.secondaryScenePos ?? ([config.secondaryDistance, 0, 0] as [number, number, number]);
+      secondary.position.set(...secPos);
     }
 
     const existingRings = scene.getObjectByName("saturnRings");
@@ -834,11 +860,13 @@ export function useScene(
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
+      setCameraView,
       updateSystemBodies,
       updateLagrangePoints,
     }),
     [addTrajectory, addManifoldTubes, addFamilyOrbits, clearFamily, highlightByJacobi,
       getMedianOrbit, setMissionSelectHighlight, clearTrajectories, resetCamera,
-      showLagrangePoints, animateSpacecraft, stopSpacecraft, updateSystemBodies, updateLagrangePoints],
+      showLagrangePoints, animateSpacecraft, stopSpacecraft, setCameraView,
+      updateSystemBodies, updateLagrangePoints],
   );
 }

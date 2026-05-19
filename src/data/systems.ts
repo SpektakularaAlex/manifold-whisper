@@ -20,6 +20,15 @@ export interface SystemBodyConfig {
   showRings: boolean
 }
 
+export interface SceneConfig {
+  cameraPos: [number, number, number]
+  cameraTarget: [number, number, number]
+  originShift: [number, number, number]
+  displayScale: number
+  primaryScenePos: [number, number, number]
+  secondaryScenePos: [number, number, number]
+}
+
 export interface CRSystem {
   id: string
   label: string
@@ -34,6 +43,7 @@ export interface CRSystem {
   realMissions: string[]
   families: FamilyMeta[]
   bodyConfig: SystemBodyConfig
+  sceneConfig: SceneConfig
   lagrangePoints: {
     L1: [number, number, number]
     L2: [number, number, number]
@@ -97,6 +107,14 @@ export const SYSTEMS: CRSystem[] = [
       secondaryName: "Moon",
       showRings: false,
     },
+    sceneConfig: {
+      cameraPos: [0, -2.5, 1.2],
+      cameraTarget: [0.5, 0, 0],
+      originShift: [0, 0, 0],
+      displayScale: 1.0,
+      primaryScenePos: [-0.01215, 0, 0],
+      secondaryScenePos: [0.98785, 0, 0],
+    },
     lagrangePoints: {
       L1: [0.8369, 0, 0],
       L2: [1.1557, 0, 0],
@@ -141,6 +159,14 @@ export const SYSTEMS: CRSystem[] = [
       secondaryName: "Earth",
       showRings: false,
     },
+    sceneConfig: {
+      cameraPos: [0, -0.15, 0.06],
+      cameraTarget: [1.0, 0, 0],
+      originShift: [0.98, 0, 0],
+      displayScale: 50.0,
+      primaryScenePos: [-1.0, 0, 0],
+      secondaryScenePos: [0.0, 0, 0],
+    },
     lagrangePoints: {
       L1: [0.9900, 0, 0],
       L2: [1.0100, 0, 0],
@@ -182,6 +208,14 @@ export const SYSTEMS: CRSystem[] = [
       secondaryName: "Europa",
       showRings: false,
     },
+    sceneConfig: {
+      cameraPos: [0, -0.3, 0.15],
+      cameraTarget: [1.0, 0, 0],
+      originShift: [0.97, 0, 0],
+      displayScale: 30.0,
+      primaryScenePos: [-0.87, 0, 0],
+      secondaryScenePos: [0.0, 0, 0],
+    },
     lagrangePoints: {
       L1: [0.9361, 0, 0],
       L2: [1.0659, 0, 0],
@@ -219,6 +253,14 @@ export const SYSTEMS: CRSystem[] = [
       primaryName: "Saturn",
       secondaryName: "Enceladus",
       showRings: true,
+    },
+    sceneConfig: {
+      cameraPos: [0, -0.1, 0.05],
+      cameraTarget: [1.0, 0, 0],
+      originShift: [0.9999, 0, 0],
+      displayScale: 500.0,
+      primaryScenePos: [-2.5, 0, 0],
+      secondaryScenePos: [0.0, 0, 0],
     },
     lagrangePoints: {
       L1: [0.9982, 0, 0],
@@ -261,6 +303,14 @@ export const SYSTEMS: CRSystem[] = [
       secondaryName: "Titan",
       showRings: true,
     },
+    sceneConfig: {
+      cameraPos: [0, -2.0, 1.0],
+      cameraTarget: [0.0, 0, 0],
+      originShift: [0.998, 0, 0],
+      displayScale: 5.0,
+      primaryScenePos: [-1.5, 0, 0],
+      secondaryScenePos: [0.0, 0, 0],
+    },
     lagrangePoints: {
       L1: [0.9575, 0, 0],
       L2: [1.0433, 0, 0],
@@ -299,6 +349,14 @@ export const SYSTEMS: CRSystem[] = [
       secondaryName: "Phobos",
       showRings: false,
     },
+    sceneConfig: {
+      cameraPos: [0, -0.05, 0.025],
+      cameraTarget: [1.0, 0, 0],
+      originShift: [0.9999, 0, 0],
+      displayScale: 1000.0,
+      primaryScenePos: [-3.0, 0, 0],
+      secondaryScenePos: [0.0, 0, 0],
+    },
     lagrangePoints: {
       L1: [0.9999, 0, 0],
       L2: [1.0001, 0, 0],
@@ -308,6 +366,25 @@ export const SYSTEMS: CRSystem[] = [
     },
   }
 ]
+
+export function transformedLagrangePoints(system: CRSystem): {
+  L1: [number, number, number]
+  L2: [number, number, number]
+  L3: [number, number, number]
+  L4: [number, number, number]
+  L5: [number, number, number]
+} {
+  const { originShift, displayScale } = system.sceneConfig
+  const raw = system.lagrangePoints
+  function tx(p: [number, number, number]): [number, number, number] {
+    return [
+      (p[0] - originShift[0]) * displayScale,
+      (p[1] - originShift[1]) * displayScale,
+      (p[2] - originShift[2]) * displayScale,
+    ]
+  }
+  return { L1: tx(raw.L1), L2: tx(raw.L2), L3: tx(raw.L3), L4: tx(raw.L4), L5: tx(raw.L5) }
+}
 
 export const CONCEPTS: SearchEntry[] = [
   {

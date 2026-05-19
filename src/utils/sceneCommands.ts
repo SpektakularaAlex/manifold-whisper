@@ -1,6 +1,46 @@
 import type { SceneAPI } from "@/hooks/useScene";
 import type { AgentCommand } from "@/hooks/useAgent";
 
+// ── Per-system view transform ──────────────────────────────────────────────────
+let _currentOriginShift: [number, number, number] = [0, 0, 0]
+let _currentDisplayScale = 1.0
+
+export function setSceneTransform(
+  originShift: [number, number, number],
+  displayScale: number,
+): void {
+  _currentOriginShift = originShift
+  _currentDisplayScale = displayScale
+}
+
+function transformPoint(p: [number, number, number]): [number, number, number] {
+  return [
+    (p[0] - _currentOriginShift[0]) * _currentDisplayScale,
+    (p[1] - _currentOriginShift[1]) * _currentDisplayScale,
+    (p[2] - _currentOriginShift[2]) * _currentDisplayScale,
+  ]
+}
+
+export function renderOrbit(
+  points: [number, number, number][],
+  label: string,
+  color: string,
+  metadata: { period?: number; jacobi?: number; family?: string },
+  scene: SceneAPI,
+): void {
+  const transformed = points.map(transformPoint)
+  scene.addTrajectory(transformed, color, label, metadata)
+}
+
+export function renderManifoldTubes(
+  tubes: [number, number, number][][],
+  color: string,
+  scene: SceneAPI,
+): void {
+  const transformed = tubes.map(tube => tube.map(transformPoint))
+  scene.addManifoldTubes(transformed, color)
+}
+
 export interface FamilyShownMeta {
   familyKey: string;
   label: string;
@@ -65,17 +105,16 @@ export function executeCommand(
         period: data.period as number | undefined,
         jacobi: data.jacobi as number | undefined,
       };
-      scene.addTrajectory(raw, color, label, metadata);
+      renderOrbit(raw, label, color, metadata, scene);
       break;
     }
 
     case "show_manifold": {
       type TubeArray = [number, number, number][][];
-      // Backend now returns four named half-tube arrays; render each with a distinct color
-      if (data?.unstable_plus)  scene.addManifoldTubes(data.unstable_plus  as TubeArray, "#FF2200");
-      if (data?.unstable_minus) scene.addManifoldTubes(data.unstable_minus as TubeArray, "#FF7700");
-      if (data?.stable_plus)    scene.addManifoldTubes(data.stable_plus    as TubeArray, "#0066FF");
-      if (data?.stable_minus)   scene.addManifoldTubes(data.stable_minus   as TubeArray, "#00BBFF");
+      if (data?.unstable_plus)  renderManifoldTubes(data.unstable_plus  as TubeArray, "#FF2200", scene);
+      if (data?.unstable_minus) renderManifoldTubes(data.unstable_minus as TubeArray, "#FF7700", scene);
+      if (data?.stable_plus)    renderManifoldTubes(data.stable_plus    as TubeArray, "#0066FF", scene);
+      if (data?.stable_minus)   renderManifoldTubes(data.stable_minus   as TubeArray, "#00BBFF", scene);
       break;
     }
 
