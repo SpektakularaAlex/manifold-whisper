@@ -115,7 +115,15 @@ export interface SceneAPI {
       serializable?: Record<string, unknown>;
     },
   ): string;
-  addMarker(position: [number, number, number], color: string, label: string): string;
+  addMarker(
+    position: [number, number, number],
+    color: string,
+    label: string,
+    metadata?: {
+      sourceKey?: string;
+      serializable?: Record<string, unknown>;
+    },
+  ): string;
   addFamilyOrbits(
     orbits: FamilyOrbitInput[],
     baseColor: string,
@@ -151,6 +159,7 @@ export interface SceneAPI {
   showLagrangePoints(show: boolean): void;
   animateSpacecraft(path: [number, number, number][], duration: number): void;
   stopSpacecraft(): void;
+  setCustomTrajectoryPreview(state0: [number, number, number, number, number, number] | null): void;
   setCameraView(position: [number, number, number], target: [number, number, number]): void;
   updateSystemBodies(config: SystemBodyConfig): void;
   updateLagrangePoints(points: {
@@ -245,6 +254,11 @@ export function useScene(
   const spacecraftStartRef = useRef<number>(0);
   const spacecraftDurRef = useRef<number>(0);
   const spacecraftActiveRef = useRef<boolean>(false);
+  const customPreviewRef = useRef<{
+    group: THREE.Group;
+    marker: THREE.Mesh;
+    arrow: THREE.ArrowHelper;
+  } | null>(null);
 
   // Stable ref so the click listener (created once) always calls the latest callback
   const onClickRef = useRef(options?.onTrajectoryClick);
@@ -678,6 +692,12 @@ export function useScene(
       composer.setSize(w, h);
     }
     window.addEventListener("resize", onResize);
+    const timer = timerRef.current;
+    const trajectoryGroups = trajGroupRef.current;
+    const particleTracks = particleTracksRef.current;
+    const registry = registryRef.current;
+    const itemRegistry = itemRegistryRef.current;
+    const familyItemChildren = familyItemChildrenRef.current;
 
     return () => {
       cancelAnimationFrame(animFrameRef.current);
@@ -685,19 +705,24 @@ export function useScene(
       renderer.domElement.removeEventListener("click", onCanvasClick);
       renderer.domElement.removeEventListener("mousemove", onCanvasMove);
       controls.dispose();
-      timerRef.current.dispose();
+      timer.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
-      trajGroupRef.current.forEach((objects) => {
+      trajectoryGroups.forEach((objects) => {
         objects.forEach((obj) => {
           disposeObject(obj);
         });
       });
-      trajGroupRef.current.clear();
-      particleTracksRef.current.clear();
-      registryRef.current.clear();
-      itemRegistryRef.current.clear();
-      familyItemChildrenRef.current.clear();
+      trajectoryGroups.clear();
+      particleTracks.clear();
+      registry.clear();
+      itemRegistry.clear();
+      familyItemChildren.clear();
+      if (customPreviewRef.current) {
+        scene.remove(customPreviewRef.current.group);
+        customPreviewRef.current.group.traverse(disposeObject);
+        customPreviewRef.current = null;
+      }
       spacecraftRef.current = null;
       spacecraftActiveRef.current = false;
       rendererRef.current = null;
@@ -883,7 +908,15 @@ export function useScene(
   );
 
   const addMarker = useCallback(
-    (position: [number, number, number], color: string, label: string): string => {
+    (
+      position: [number, number, number],
+      color: string,
+      label: string,
+      metadata?: {
+        sourceKey?: string;
+        serializable?: Record<string, unknown>;
+      },
+    ): string => {
       const scene = threeSceneRef.current;
       if (!scene) return "";
       const id = `marker_${++idRef.current}`;
@@ -898,7 +931,15 @@ export function useScene(
       mesh.position.set(position[0], position[1], position[2]);
       scene.add(mesh);
       trajGroupRef.current.set(id, [mesh]);
-      upsertItem({ id, name: label, type: "marker", color, visible: true });
+      upsertItem({
+        id,
+        name: label,
+        type: "marker",
+        color,
+        visible: true,
+        sourceKey: metadata?.sourceKey,
+        serializable: metadata?.serializable,
+      });
       return id;
     },
     [upsertItem],
@@ -1296,6 +1337,52 @@ export function useScene(
     if (spacecraftRef.current) spacecraftRef.current.visible = false;
   }, []);
 
+  const setCustomTrajectoryPreview = useCallback(
+    (state0: [number, number, number, number, number, number] | null) => {
+      const scene = threeSceneRef.current;
+      if (!scene) return;
+      if (!state0) {
+        if (customPreviewRef.current) customPreviewRef.current.group.visible = false;
+        return;
+      }
+      if (!customPreviewRef.current) {
+        const group = new THREE.Group();
+        group.name = "customTrajectoryPreview";
+        const marker = new THREE.Mesh(
+          new THREE.SphereGeometry(0.018, 24, 16),
+          new THREE.MeshBasicMaterial({
+            color: 0x44ff88,
+            transparent: true,
+            opacity: 0.92,
+          }),
+        );
+        const glow = new THREE.PointLight(0x44ff88, 0.6, 0.35);
+        marker.add(glow);
+        const arrow = new THREE.ArrowHelper(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3(0, 0, 0),
+          0.18,
+          0xfff06a,
+          0.045,
+          0.025,
+        );
+        group.add(marker, arrow);
+        scene.add(group);
+        customPreviewRef.current = { group, marker, arrow };
+      }
+      const preview = customPreviewRef.current;
+      preview.group.visible = true;
+      preview.marker.position.set(state0[0], state0[1], state0[2]);
+      const velocity = new THREE.Vector3(state0[3], state0[4], state0[5]);
+      const speed = velocity.length();
+      const direction = speed > 1e-8 ? velocity.clone().normalize() : new THREE.Vector3(0, 1, 0);
+      preview.arrow.position.set(state0[0], state0[1], state0[2]);
+      preview.arrow.setDirection(direction);
+      preview.arrow.setLength(Math.min(Math.max(speed * 0.55, 0.08), 0.45), 0.045, 0.025);
+    },
+    [],
+  );
+
   const setCameraView = useCallback(
     (position: [number, number, number], target: [number, number, number]) => {
       const camera = cameraRef.current;
@@ -1408,6 +1495,7 @@ export function useScene(
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
+      setCustomTrajectoryPreview,
       setCameraView,
       updateSystemBodies,
       updateLagrangePoints,
@@ -1433,6 +1521,7 @@ export function useScene(
       showLagrangePoints,
       animateSpacecraft,
       stopSpacecraft,
+      setCustomTrajectoryPreview,
       setCameraView,
       updateSystemBodies,
       updateLagrangePoints,

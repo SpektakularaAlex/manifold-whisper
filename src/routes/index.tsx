@@ -38,14 +38,19 @@ import {
   type CRSystem,
   type SearchEntry,
 } from "@/data/systems";
-import { SystemControlPanel, type VisualizeParams } from "@/components/manifold/SystemControlPanel";
+import type { VisualizeParams } from "@/components/manifold/SystemControlPanel";
 import { SearchBar } from "@/components/manifold/SearchBar";
 import {
   buildSavedSceneStateFromAppState,
   deserializeSceneState,
   serializeSceneState,
-  type SavedSceneStateV1,
+  type SavedSceneState,
 } from "@/utils/sceneSerialization";
+import {
+  clearAutosavedScene,
+  loadAutosavedScene,
+  saveAutosavedScene,
+} from "@/utils/scenePersistence";
 import { selectionFromTrajectory, type SceneSelection } from "@/data/educationalContent";
 import { MANIFOLD_COLORS } from "@/components/manifold/constants";
 
@@ -88,13 +93,14 @@ function Index() {
   } | null>(null);
   const [preSelectedFamilyId, setPreSelectedFamilyId] = useState<string | null>(null);
   const [conceptContent, setConceptContent] = useState<SearchEntry | null>(null);
-  const [missionOpen, setMissionOpen] = useState(false);
   const [plottedItems, setPlottedItems] = useState<PlottedSceneItem[]>([]);
   const [sceneSelection, setSceneSelection] = useState<SceneSelection>({ type: "default" });
   const [pinnedPreviewAnchor, setPinnedPreviewAnchor] = useState<string | null>(null);
   const pinnedPreviewAnchorRef = useRef<string | null>(null);
   const [sceneKey, setSceneKey] = useState<string | null>(null);
   const [sceneKeyCopied, setSceneKeyCopied] = useState(false);
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+  const restoreAttemptedRef = useRef(false);
   const previewCacheRef = useRef<
     Map<
       string,
@@ -177,6 +183,7 @@ function Index() {
                 familyKey,
                 sourceFamilyKey: familyKey,
                 orbitIndex,
+                manifoldSettings: { nBranches: 80, propagationTime: 3.0 },
               },
             },
           };
@@ -269,6 +276,7 @@ function Index() {
                 familyKey,
                 sourceFamilyKey: familyKey,
                 orbitIndex: index,
+                manifoldSettings: { nBranches: 20, propagationTime: 3.0 },
               },
             },
           };
@@ -361,28 +369,51 @@ function Index() {
   );
 
   // Renders transfer result segments and animates spacecraft
-  const handleTransferResult = useCallback((result: TransferResult) => {
-    const scene = sceneRef.current;
-    if (!scene) return;
-    for (const seg of result.segments) {
-      const lower = seg.label.toLowerCase();
-      scene.addTrajectory(seg.trajectory, seg.color, seg.label, {
-        itemType: lower.includes("unstable")
-          ? "unstable-manifold"
-          : lower.includes("stable")
-            ? "stable-manifold"
-            : "mission",
-        sourceKey: "mission-transfer",
-        serializable: { kind: "transferSegment", label: seg.label },
-      });
-    }
-    if (result.closest_approach_points?.departure) {
-      scene.addMarker(result.closest_approach_points.departure, "#FFFF00", "Closest approach");
-    }
-    if (result.total_trajectory.length > 0) {
-      scene.animateSpacecraft(result.total_trajectory, result.total_duration_tu);
-    }
-  }, []);
+  const handleTransferResult = useCallback(
+    (result: TransferResult) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const transfer =
+        plannerDep?.familyKey && plannerArr?.familyKey
+          ? {
+              departureFamilyKey: plannerDep.familyKey,
+              departureOrbitIndex: plannerDep.orbitIndex ?? 0,
+              departureLabel: plannerDep.label,
+              arrivalFamilyKey: plannerArr.familyKey,
+              arrivalOrbitIndex: plannerArr.orbitIndex ?? 0,
+              arrivalLabel: plannerArr.label,
+              system: selectedSystem.id,
+            }
+          : undefined;
+      for (const seg of result.segments) {
+        const lower = seg.label.toLowerCase();
+        scene.addTrajectory(seg.trajectory, seg.color, seg.label, {
+          itemType: lower.includes("unstable")
+            ? "unstable-manifold"
+            : lower.includes("stable")
+              ? "stable-manifold"
+              : "mission",
+          sourceKey: "mission-transfer",
+          serializable: {
+            kind: "transferSegment",
+            label: seg.label,
+            segmentType: seg.type,
+            transfer,
+          },
+        });
+      }
+      if (result.closest_approach_points?.departure) {
+        scene.addMarker(result.closest_approach_points.departure, "#FFFF00", "Closest approach", {
+          sourceKey: "mission-transfer",
+          serializable: { kind: "transferClosestApproach", transfer },
+        });
+      }
+      if (result.total_trajectory.length > 0) {
+        scene.animateSpacecraft(result.total_trajectory, result.total_duration_tu);
+      }
+    },
+    [plannerArr, plannerDep, selectedSystem.id],
+  );
 
   const showPreviewFamiliesForAnchor = useCallback(
     (target: string, pinned: boolean) => {
@@ -527,6 +558,7 @@ function Index() {
 
   const clearPlottedScene = useCallback(() => {
     sceneRef.current?.clearTrajectories();
+    clearAutosavedScene();
     setMissionActive(false);
     setMissionLegs([]);
     setLastOrbitMeta(null);
@@ -545,6 +577,7 @@ function Index() {
       camera: sceneRef.current?.getCameraState() ?? undefined,
     });
     const key = serializeSceneState(state);
+    saveAutosavedScene(state);
     setSceneKey(key);
     setSceneKeyCopied(false);
     void navigator.clipboard?.writeText(key).then(
@@ -558,7 +591,7 @@ function Index() {
       const scene = sceneRef.current;
       if (!scene) throw new Error("Scene is not ready yet.");
 
-      let state: SavedSceneStateV1;
+      let state: SavedSceneState;
       try {
         state = deserializeSceneState(key);
       } catch {
@@ -582,6 +615,8 @@ function Index() {
       const warnings: string[] = [];
       const loadedFamilies = new Set<string>();
       const loadedManifolds = new Set<string>();
+      const loadedTransfers = new Set<string>();
+      const loadedMissions = new Set<string>();
 
       const familiesMeta = (await fetch(`${API_URL}/families`)
         .then((r) => (r.ok ? r.json() : {}))
@@ -592,6 +627,144 @@ function Index() {
 
       for (const item of state.plottedItems) {
         try {
+          const transfer = "transfer" in item ? item.transfer : undefined;
+          const mission = "mission" in item ? item.mission : undefined;
+          if (item.type === "mission") {
+            if (!mission?.legs?.length) {
+              warnings.push(
+                `Could not restore mission${
+                  item.label ? ` "${item.label}"` : ""
+                }: saved key is missing the mission leg sequence.`,
+              );
+              continue;
+            }
+            const missionKey = JSON.stringify(mission.legs);
+            if (loadedMissions.has(missionKey)) continue;
+            loadedMissions.add(missionKey);
+            const res = await fetch(`${API_URL}/mission`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                legs: mission.legs,
+                system: mission.system ?? EARTH_MOON_SYSTEM.id,
+              }),
+            });
+            if (!res.ok) throw new Error(`mission returned ${res.status}`);
+            const r = (await res.json()) as {
+              legs: Array<{
+                label: string;
+                type: string;
+                color: string;
+                duration: number;
+                trajectory: [number, number, number][];
+              }>;
+              total_trajectory: [number, number, number][];
+              total_duration: number;
+            };
+            const ids: string[] = [];
+            for (const leg of r.legs) {
+              if (!leg.trajectory?.length) continue;
+              ids.push(
+                scene.addTrajectory(leg.trajectory, leg.color, leg.label, {
+                  family: leg.type,
+                  itemType: leg.type.includes("manifold")
+                    ? leg.type.includes("arrival")
+                      ? "stable-manifold"
+                      : "unstable-manifold"
+                    : "mission",
+                  sourceKey: "mission-builder",
+                  serializable: {
+                    kind: "missionBuilderSegment",
+                    label: leg.label,
+                    mission,
+                  },
+                }),
+              );
+            }
+            setMissionLegs(
+              r.legs.map((leg) => ({
+                label: leg.label,
+                type: leg.type,
+                color: leg.color,
+                duration: leg.duration,
+              })),
+            );
+            setMissionDuration(r.total_duration ?? 0);
+            setMissionActive(true);
+            if (r.total_trajectory?.length > 0) {
+              scene.animateSpacecraft(r.total_trajectory, r.total_duration ?? 10);
+            }
+            if (!item.visible)
+              ids.filter(Boolean).forEach((id) => scene.setPlottedItemVisible(id, false));
+            continue;
+          }
+
+          if (item.type === "transfer") {
+            if (!transfer) {
+              warnings.push(
+                `Could not restore transfer${
+                  item.label ? ` "${item.label}"` : ""
+                }: saved key is missing departure and arrival orbit indices.`,
+              );
+              continue;
+            }
+            const transferKey = `${transfer.departureFamilyKey}:${transfer.departureOrbitIndex}->${transfer.arrivalFamilyKey}:${transfer.arrivalOrbitIndex}`;
+            if (loadedTransfers.has(transferKey)) continue;
+            loadedTransfers.add(transferKey);
+            const res = await fetch(`${API_URL}/transfer`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                departure_family_key: transfer.departureFamilyKey,
+                departure_orbit_index: transfer.departureOrbitIndex,
+                arrival_family_key: transfer.arrivalFamilyKey,
+                arrival_orbit_index: transfer.arrivalOrbitIndex,
+                system: transfer.system ?? EARTH_MOON_SYSTEM.id,
+              }),
+            });
+            if (!res.ok) throw new Error(`transfer returned ${res.status}`);
+            const result = (await res.json()) as TransferResult;
+            const ids: string[] = [];
+            for (const seg of result.segments) {
+              const lower = seg.label.toLowerCase();
+              ids.push(
+                scene.addTrajectory(seg.trajectory, seg.color, seg.label, {
+                  itemType: lower.includes("unstable")
+                    ? "unstable-manifold"
+                    : lower.includes("stable")
+                      ? "stable-manifold"
+                      : "mission",
+                  sourceKey: "mission-transfer",
+                  serializable: {
+                    kind: "transferSegment",
+                    label: seg.label,
+                    segmentType: seg.type,
+                    transfer,
+                  },
+                }),
+              );
+            }
+            if (result.closest_approach_points?.departure) {
+              ids.push(
+                scene.addMarker(
+                  result.closest_approach_points.departure,
+                  "#FFFF00",
+                  "Closest approach",
+                  {
+                    sourceKey: "mission-transfer",
+                    serializable: { kind: "transferClosestApproach", transfer },
+                  },
+                ),
+              );
+            }
+            if (result.total_trajectory.length > 0) {
+              scene.animateSpacecraft(result.total_trajectory, result.total_duration_tu);
+            }
+            if (!item.visible)
+              ids.filter(Boolean).forEach((id) => scene.setPlottedItemVisible(id, false));
+            continue;
+          }
+
           if (item.type === "family") {
             const familyKey = item.familyKey ?? item.sourceKey ?? item.id;
             if (!familyKey || loadedFamilies.has(familyKey)) continue;
@@ -668,10 +841,15 @@ function Index() {
           if (item.type === "manifold") {
             const familyKey = item.sourceFamilyKey ?? item.familyKey ?? item.sourceKey;
             if (!familyKey || item.orbitIndex == null) {
-              warnings.push(`${item.label ?? "Manifold"} is missing source orbit data`);
+              warnings.push(
+                item.sourceKey === "mission-transfer"
+                  ? `Could not restore transfer segment "${item.label ?? "manifold"}": saved key is missing departure/arrival orbit data.`
+                  : `${item.label ?? "Manifold"} is missing source orbit data`,
+              );
               continue;
             }
             const manifoldType = item.manifoldType ?? "both";
+            const manifoldSettings = "manifoldSettings" in item ? item.manifoldSettings : undefined;
             const key = `${familyKey}:${item.orbitIndex}:${manifoldType}`;
             if (loadedManifolds.has(key)) continue;
             loadedManifolds.add(key);
@@ -683,8 +861,8 @@ function Index() {
                 ...parsed,
                 index: item.orbitIndex,
                 type: manifoldType,
-                n_branches: 20,
-                propagation_time: 3.0,
+                n_branches: manifoldSettings?.nBranches ?? 80,
+                propagation_time: manifoldSettings?.propagationTime ?? 3.0,
                 system: EARTH_MOON_SYSTEM.id,
               }),
             });
@@ -706,6 +884,10 @@ function Index() {
                     familyKey,
                     sourceFamilyKey: familyKey,
                     orbitIndex: item.orbitIndex,
+                    manifoldSettings: {
+                      nBranches: manifoldSettings?.nBranches ?? 80,
+                      propagationTime: manifoldSettings?.propagationTime ?? 3.0,
+                    },
                   },
                 }),
               );
@@ -722,6 +904,10 @@ function Index() {
                     familyKey,
                     sourceFamilyKey: familyKey,
                     orbitIndex: item.orbitIndex,
+                    manifoldSettings: {
+                      nBranches: manifoldSettings?.nBranches ?? 80,
+                      propagationTime: manifoldSettings?.propagationTime ?? 3.0,
+                    },
                   },
                 }),
               );
@@ -738,6 +924,10 @@ function Index() {
                     familyKey,
                     sourceFamilyKey: familyKey,
                     orbitIndex: item.orbitIndex,
+                    manifoldSettings: {
+                      nBranches: manifoldSettings?.nBranches ?? 80,
+                      propagationTime: manifoldSettings?.propagationTime ?? 3.0,
+                    },
                   },
                 }),
               );
@@ -754,6 +944,10 @@ function Index() {
                     familyKey,
                     sourceFamilyKey: familyKey,
                     orbitIndex: item.orbitIndex,
+                    manifoldSettings: {
+                      nBranches: manifoldSettings?.nBranches ?? 80,
+                      propagationTime: manifoldSettings?.propagationTime ?? 3.0,
+                    },
                   },
                 }),
               );
@@ -828,6 +1022,51 @@ function Index() {
     [clearPlottedScene],
   );
 
+  React.useEffect(() => {
+    if (!sceneAPI || restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    const saved = (() => {
+      try {
+        return loadAutosavedScene();
+      } catch {
+        clearAutosavedScene();
+        return null;
+      }
+    })();
+    if (!saved || saved.state.plottedItems.length === 0) return;
+    void handleLoadSceneKey(saved.sceneKey)
+      .then((warnings) => {
+        setRestoreNotice(
+          warnings.length > 0
+            ? `Restored previous scene with ${warnings.length} warning(s)`
+            : "Restored previous scene",
+        );
+        window.setTimeout(() => setRestoreNotice(null), 4200);
+      })
+      .catch(() => {
+        setRestoreNotice("Could not restore previous scene");
+        window.setTimeout(() => setRestoreNotice(null), 4200);
+      });
+  }, [handleLoadSceneKey, sceneAPI]);
+
+  React.useEffect(() => {
+    if (!sceneAPI || !restoreAttemptedRef.current) return;
+    const id = window.setTimeout(() => {
+      if (plottedItems.length === 0) {
+        clearAutosavedScene();
+        return;
+      }
+      const state = buildSavedSceneStateFromAppState({
+        system: selectedSystem.id,
+        plottedItems,
+        selectedAnchor: pinnedPreviewAnchor,
+        camera: sceneRef.current?.getCameraState() ?? undefined,
+      });
+      saveAutosavedScene(state);
+    }, 800);
+    return () => window.clearTimeout(id);
+  }, [pinnedPreviewAnchor, plottedItems, sceneAPI, selectedSystem.id]);
+
   const copySceneKey = useCallback(() => {
     if (!sceneKey) return;
     void navigator.clipboard?.writeText(sceneKey).then(() => setSceneKeyCopied(true));
@@ -886,6 +1125,13 @@ function Index() {
     [selectedSystem.id],
   );
 
+  const handleCustomTrajectoryPreview = useCallback(
+    (state0: CustomTrajectoryConfig["state0"] | null) => {
+      sceneRef.current?.setCustomTrajectoryPreview(state0);
+    },
+    [],
+  );
+
   void labelsVisible;
 
   return (
@@ -906,6 +1152,22 @@ function Index() {
         onEmptySceneClick={handleEmptySceneClick}
       />
 
+      <div className="manifold-orientation-overlay" aria-live="polite">
+        <div className="manifold-orientation-card">
+          <div className="manifold-mono" style={{ color: "var(--manifold-cyan)", fontSize: 13 }}>
+            Rotate your device
+          </div>
+          <div style={{ marginTop: 8, lineHeight: 1.5 }}>
+            Manifold is a 3D orbital dynamics explorer and works best in landscape mode.
+          </div>
+          <div style={{ marginTop: 8, color: "rgba(180,200,220,0.68)", lineHeight: 1.45 }}>
+            Turn your phone sideways to explore the Earth-Moon system.
+          </div>
+        </div>
+      </div>
+
+      {restoreNotice && <div className="manifold-toast">{restoreNotice}</div>}
+
       <SearchBar
         onSelectSystem={handleSearchSelectSystem}
         onSelectFamily={handleSearchSelectFamily}
@@ -925,27 +1187,106 @@ function Index() {
         onSaveScene={handleSaveScene}
         onLoadSceneKey={handleLoadSceneKey}
         onToggleLabels={handleToggleLabels}
-        onMission={() => setMissionOpen((prev) => !prev)}
         plottedItems={plottedItems}
         scene={sceneAPI}
         apiUrl={API_URL}
         onSelectionChange={setSceneSelection}
+        missionContent={
+          <>
+            <MissionPanel
+              embedded
+              legs={missionLegs}
+              totalDuration={missionDuration}
+              onClose={() => {
+                setMissionActive(false);
+              }}
+              selectedSystem={selectedSystem}
+              onMissionResult={(result, builderLegs) => {
+                type RawMission = {
+                  legs: Array<{
+                    label: string;
+                    type: string;
+                    color: string;
+                    duration: number;
+                    trajectory: [number, number, number][];
+                  }>;
+                  total_trajectory: [number, number, number][];
+                  total_duration: number;
+                };
+                const r = result as RawMission;
+                const scene = sceneRef.current;
+                if (!scene || !r?.legs) return;
+                for (const leg of r.legs) {
+                  if (!leg.trajectory || leg.trajectory.length === 0) continue;
+                  scene.addTrajectory(leg.trajectory, leg.color, leg.label, {
+                    family: leg.type,
+                    itemType: leg.type.includes("manifold")
+                      ? leg.type.includes("arrival")
+                        ? "stable-manifold"
+                        : "unstable-manifold"
+                      : "mission",
+                    sourceKey: "mission-builder",
+                    serializable: {
+                      kind: "missionBuilderSegment",
+                      label: leg.label,
+                      mission: { legs: builderLegs, system: selectedSystem.id },
+                    },
+                  });
+                }
+                setMissionLegs(
+                  r.legs.map((l) => ({
+                    label: l.label,
+                    type: l.type,
+                    color: l.color,
+                    duration: l.duration,
+                  })),
+                );
+                setMissionDuration(r.total_duration ?? 0);
+                setMissionActive(true);
+                if (r.total_trajectory?.length > 0)
+                  scene.animateSpacecraft(r.total_trajectory, r.total_duration ?? 10);
+              }}
+            />
+            <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
+            <TransferPlannerPanel
+              embedded
+              active={plannerActive}
+              departure={plannerDep}
+              arrival={plannerArr}
+              onActivate={() => {
+                setPlannerActive(true);
+                setPlannerDep(null);
+                setPlannerArr(null);
+                setSelectedTrajectory(null);
+              }}
+              onDeactivate={() => {
+                setPlannerActive(false);
+                setPlannerDep(null);
+                setPlannerArr(null);
+                sceneRef.current?.setMissionSelectHighlight([]);
+              }}
+              onClearSelection={() => {
+                setPlannerDep(null);
+                setPlannerArr(null);
+                sceneRef.current?.setMissionSelectHighlight([]);
+              }}
+              onTransferResult={handleTransferResult}
+            />
+          </>
+        }
+        customTrajectoryContent={
+          <TrajectoryInputPanel
+            embedded
+            onPlot={handlePlotCustomTrajectory}
+            onPreviewChange={handleCustomTrajectoryPreview}
+          />
+        }
       />
 
       <FamilyBrowserPanel
         scene={sceneAPI}
         onShowManifolds={(familyKey, orbitIndex) => void handleShowManifolds(familyKey, orbitIndex)}
       />
-
-      <SystemControlPanel
-        selectedSystem={selectedSystem}
-        preSelectedFamilyId={preSelectedFamilyId}
-        onVisualize={(params) => void handleVisualize(params)}
-        isLoading={isLoading}
-        lastOrbitMeta={lastOrbitMeta}
-      />
-
-      <TrajectoryInputPanel onPlot={handlePlotCustomTrajectory} />
 
       {sceneKey && (
         <div
@@ -1018,58 +1359,6 @@ function Index() {
         />
       )}
 
-      {((missionActive && missionLegs.length > 0) || missionOpen) && (
-        <MissionPanel
-          legs={missionLegs}
-          totalDuration={missionDuration}
-          onClose={() => {
-            setMissionActive(false);
-            setMissionOpen(false);
-          }}
-          selectedSystem={selectedSystem}
-          onMissionResult={(result) => {
-            type RawMission = {
-              legs: Array<{
-                label: string;
-                type: string;
-                color: string;
-                duration: number;
-                trajectory: [number, number, number][];
-              }>;
-              total_trajectory: [number, number, number][];
-              total_duration: number;
-            };
-            const r = result as RawMission;
-            const scene = sceneRef.current;
-            if (!scene || !r?.legs) return;
-            for (const leg of r.legs) {
-              if (!leg.trajectory || leg.trajectory.length === 0) continue;
-              scene.addTrajectory(leg.trajectory, leg.color, leg.label, {
-                family: leg.type,
-                itemType: leg.type.includes("manifold")
-                  ? leg.type.includes("arrival")
-                    ? "stable-manifold"
-                    : "unstable-manifold"
-                  : "mission",
-                sourceKey: "mission-builder",
-              });
-            }
-            setMissionLegs(
-              r.legs.map((l) => ({
-                label: l.label,
-                type: l.type,
-                color: l.color,
-                duration: l.duration,
-              })),
-            );
-            setMissionDuration(r.total_duration ?? 0);
-            setMissionActive(true);
-            if (r.total_trajectory?.length > 0)
-              scene.animateSpacecraft(r.total_trajectory, r.total_duration ?? 10);
-          }}
-        />
-      )}
-
       {activeControlFamily && (
         <FamilyControlsBar
           familyMeta={activeControlFamily}
@@ -1080,30 +1369,6 @@ function Index() {
           onClose={() => setActiveControlFamily(null)}
         />
       )}
-
-      <TransferPlannerPanel
-        active={plannerActive}
-        departure={plannerDep}
-        arrival={plannerArr}
-        onActivate={() => {
-          setPlannerActive(true);
-          setPlannerDep(null);
-          setPlannerArr(null);
-          setSelectedTrajectory(null);
-        }}
-        onDeactivate={() => {
-          setPlannerActive(false);
-          setPlannerDep(null);
-          setPlannerArr(null);
-          sceneRef.current?.setMissionSelectHighlight([]);
-        }}
-        onClearSelection={() => {
-          setPlannerDep(null);
-          setPlannerArr(null);
-          sceneRef.current?.setMissionSelectHighlight([]);
-        }}
-        onTransferResult={handleTransferResult}
-      />
     </main>
   );
 }

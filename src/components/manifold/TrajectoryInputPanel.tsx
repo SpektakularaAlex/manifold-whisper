@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type CustomTrajectoryConfig = {
   label: string;
@@ -11,6 +11,8 @@ export type CustomTrajectoryConfig = {
 
 interface Props {
   onPlot: (config: CustomTrajectoryConfig) => Promise<number | void>;
+  embedded?: boolean;
+  onPreviewChange?: (state0: CustomTrajectoryConfig["state0"] | null) => void;
 }
 
 const DEFAULT_STATE: CustomTrajectoryConfig = {
@@ -22,12 +24,20 @@ const DEFAULT_STATE: CustomTrajectoryConfig = {
   animate: true,
 };
 
-export function TrajectoryInputPanel({ onPlot }: Props) {
+export function TrajectoryInputPanel({ onPlot, embedded = false, onPreviewChange }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [config, setConfig] = useState<CustomTrajectoryConfig>(DEFAULT_STATE);
   const [error, setError] = useState<string | null>(null);
   const [lastJacobi, setLastJacobi] = useState<number | null>(null);
   const [isPlotting, setIsPlotting] = useState(false);
+
+  useEffect(() => {
+    const previewVisible = embedded || isOpen;
+    onPreviewChange?.(previewVisible ? config.state0 : null);
+    return () => {
+      onPreviewChange?.(null);
+    };
+  }, [config.state0, embedded, isOpen, onPreviewChange]);
 
   const updateState = (index: number, value: string) => {
     const next = [...config.state0] as CustomTrajectoryConfig["state0"];
@@ -62,32 +72,37 @@ export function TrajectoryInputPanel({ onPlot }: Props) {
   };
 
   return (
-    <aside
+    <div
       className="manifold-panel"
       style={{
-        position: "fixed",
-        left: 24,
-        bottom: 24,
-        width: isOpen ? 314 : 176,
-        padding: isOpen ? "12px 14px" : "8px 10px",
-        zIndex: 12,
+        position: embedded ? "relative" : "fixed",
+        left: embedded ? undefined : 24,
+        bottom: embedded ? undefined : 24,
+        width: embedded ? "100%" : isOpen ? 314 : 176,
+        padding: embedded ? 0 : isOpen ? "12px 14px" : "8px 10px",
+        zIndex: embedded ? undefined : 12,
         fontFamily: "'Space Mono', monospace",
         color: "#e0eeff",
         fontSize: 10,
+        border: embedded ? 0 : undefined,
+        background: embedded ? "transparent" : undefined,
+        boxShadow: embedded ? "none" : undefined,
         transition: "width 0.2s ease, padding 0.2s ease",
       }}
     >
-      <button
-        className="manifold-icon-btn"
-        onClick={() => setIsOpen((prev) => !prev)}
-        style={{ width: "100%", justifyContent: "space-between" }}
-        aria-expanded={isOpen}
-      >
-        <span>Custom Trajectory</span>
-        <span>{isOpen ? "⌄" : "⌃"}</span>
-      </button>
+      {!embedded && (
+        <button
+          className="manifold-icon-btn"
+          onClick={() => setIsOpen((prev) => !prev)}
+          style={{ width: "100%", justifyContent: "space-between" }}
+          aria-expanded={isOpen}
+        >
+          <span>Custom Trajectory</span>
+          <span>{isOpen ? "⌄" : "⌃"}</span>
+        </button>
+      )}
 
-      {isOpen && (
+      {(embedded || isOpen) && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ color: "#8aa0b4", lineHeight: 1.45 }}>
             Normalized Earth-Moon CR3BP rotating-frame units. Educational sandbox, not a dimensional
@@ -100,7 +115,10 @@ export function TrajectoryInputPanel({ onPlot }: Props) {
             style={{ padding: "6px 8px" }}
             aria-label="Trajectory label"
           />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+          <div
+            className="trajectory-state-grid"
+            style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}
+          >
             {["x", "y", "z", "vx", "vy", "vz"].map((label, index) => (
               <label key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 <span style={{ color: "rgba(0,255,255,0.55)" }}>{label}</span>
@@ -169,6 +187,9 @@ export function TrajectoryInputPanel({ onPlot }: Props) {
               animate
             </label>
           </div>
+          <div style={{ color: "#6f8798", lineHeight: 1.4 }}>
+            The glowing marker shows initial position; the arrow shows rotating-frame velocity.
+          </div>
           {lastJacobi != null && <div style={{ color: "#9bb2c4" }}>Jacobi C: {lastJacobi}</div>}
           {error && <div style={{ color: "#ff8866", lineHeight: 1.4 }}>{error}</div>}
           <button
@@ -181,6 +202,6 @@ export function TrajectoryInputPanel({ onPlot }: Props) {
           </button>
         </div>
       )}
-    </aside>
+    </div>
   );
 }

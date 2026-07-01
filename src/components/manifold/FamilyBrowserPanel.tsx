@@ -40,7 +40,7 @@ function StabilityLabel({ s }: { s: number }) {
 }
 
 export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [families, setFamilies] = useState<Record<string, FamilyMeta> | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [activeFamilies, setActiveFamilies] = useState<Set<string>>(new Set());
@@ -66,14 +66,12 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
         const data = (await res.json()) as { orbits: FamilyOrbit[]; label: string };
         const fam = families?.[key];
         if (!fam) return;
-        scene.addFamilyOrbits(
-          data.orbits,
-          fam.color,
-          fam.jacobi_min,
-          fam.jacobi_max,
-          key,
-        );
-        setActiveFamilies((prev) => { const next = new Set(prev); next.add(key); return next; });
+        scene.addFamilyOrbits(data.orbits, fam.color, fam.jacobi_min, fam.jacobi_max, key);
+        setActiveFamilies((prev) => {
+          const next = new Set(prev);
+          next.add(key);
+          return next;
+        });
         setLoadedFamilyKey(key);
         setJacobiValue(fam.jacobi_min);
         setHighlighted(scene.highlightByJacobi(fam.jacobi_min, key));
@@ -92,7 +90,11 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
       if (activeFamilies.has(key)) {
         // Toggle off: remove from scene
         scene?.clearFamily(key);
-        setActiveFamilies((prev) => { const next = new Set(prev); next.delete(key); return next; });
+        setActiveFamilies((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
         if (loadedFamilyKey === key) setLoadedFamilyKey(null);
       } else {
         void loadFamily(key, nOrbits);
@@ -130,7 +132,7 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
       style={{
         position: "fixed",
         top: 24,
-        right: 24,
+        right: 340,
         width: collapsed ? 44 : 280,
         maxHeight: "calc(100vh - 48px)",
         background: "rgba(0, 8, 14, 0.92)",
@@ -194,7 +196,9 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
                 onClick={() => handleCardClick(key)}
                 style={{
                   padding: "8px 10px",
-                  background: activeFamilies.has(key) ? hexToRgba(fam.color, 0.15) : "rgba(255,255,255,0.03)",
+                  background: activeFamilies.has(key)
+                    ? hexToRgba(fam.color, 0.15)
+                    : "rgba(255,255,255,0.03)",
                   border: activeFamilies.has(key)
                     ? `2px solid ${fam.color}`
                     : selected === key
@@ -220,7 +224,8 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: "#ddeeff", fontWeight: 600, fontSize: 11 }}>{fam.label}</div>
                   <div style={{ color: "#778899", fontSize: 10, marginTop: 2 }}>
-                    {fam.count.toLocaleString()} orbits &nbsp;·&nbsp; C: {fam.jacobi_min.toFixed(2)}–{fam.jacobi_max.toFixed(2)}
+                    {fam.count.toLocaleString()} orbits &nbsp;·&nbsp; C: {fam.jacobi_min.toFixed(2)}
+                    –{fam.jacobi_max.toFixed(2)}
                   </div>
                 </div>
                 <div
@@ -296,7 +301,9 @@ export function FamilyBrowserPanel({ scene, onShowManifolds }: Props) {
                         <span style={{ color: "#778899" }}>C = </span>
                         <span style={{ color: "#ddeeff" }}>{highlighted.jacobi.toFixed(4)}</span>
                         <span style={{ color: "#778899" }}> &nbsp;|&nbsp; Period = </span>
-                        <span style={{ color: "#ddeeff" }}>{highlighted.period_days.toFixed(1)} days</span>
+                        <span style={{ color: "#ddeeff" }}>
+                          {highlighted.period_days.toFixed(1)} days
+                        </span>
                       </div>
                       <div>
                         <span style={{ color: "#778899" }}>Stability: </span>

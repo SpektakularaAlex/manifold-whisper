@@ -36,6 +36,7 @@ interface Props {
   onDeactivate: () => void;
   onClearSelection: () => void;
   onTransferResult: (result: TransferResult) => void;
+  embedded?: boolean;
 }
 
 function OrbitSlot({ label, meta }: { label: string; meta: TrajectoryMeta | null }) {
@@ -78,6 +79,7 @@ export function TransferPlannerPanel({
   onDeactivate,
   onClearSelection,
   onTransferResult,
+  embedded = false,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TransferResult | null>(null);
@@ -129,10 +131,10 @@ export function TransferPlannerPanel({
   return (
     <div
       style={{
-        position: "fixed",
-        bottom: 160,
-        left: 24,
-        width: 300,
+        position: embedded ? "relative" : "fixed",
+        bottom: embedded ? undefined : 160,
+        left: embedded ? undefined : 24,
+        width: embedded ? "100%" : 300,
         background: "rgba(0, 8, 14, 0.92)",
         border: `1px solid ${active ? "rgba(255,180,0,0.5)" : "rgba(0,255,255,0.2)"}`,
         backdropFilter: "blur(10px)",
@@ -140,7 +142,7 @@ export function TransferPlannerPanel({
         color: "#e0eeff",
         fontFamily: "'Space Mono', monospace",
         fontSize: 12,
-        zIndex: 15,
+        zIndex: embedded ? undefined : 15,
       }}
     >
       {/* Header */}

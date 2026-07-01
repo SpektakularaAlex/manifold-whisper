@@ -4,6 +4,7 @@ import {
   contentForSelection,
   EDUCATIONAL_CONTENT,
   type EducationalContentEntry,
+  type EducationalContentKey,
   type SceneSelection,
 } from "@/data/educationalContent";
 
@@ -21,6 +22,7 @@ const THINKING_STATES = [
   "Propagating orbit...",
   "Rendering manifolds...",
 ];
+const NO_RELATED_TERMS: EducationalContentKey[] = [];
 
 function labelForSelection(selection: SceneSelection): string | null {
   switch (selection.type) {
@@ -63,21 +65,21 @@ export function InfoPanel({
       return {
         title: conceptContent.label,
         beginner: conceptContent.description,
-        relatedTerms: [] as const,
+        relatedTerms: NO_RELATED_TERMS,
       };
     }
     if (isThinking) {
       return {
         title: "Working",
         beginner: THINKING_STATES[thinkingIdx],
-        relatedTerms: [] as const,
+        relatedTerms: NO_RELATED_TERMS,
       };
     }
     if (explanation) {
       return {
         title: "Assistant Result",
         beginner: explanation,
-        relatedTerms: [] as const,
+        relatedTerms: NO_RELATED_TERMS,
       };
     }
     return contentForSelection(selection);

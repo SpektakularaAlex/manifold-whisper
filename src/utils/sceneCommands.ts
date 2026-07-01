@@ -118,12 +118,13 @@ export function executeCommand(
     case "show_manifold": {
       type TubeArray = [number, number, number][][];
       const source = _manifoldSource(data, params);
+      const manifoldSettings = _manifoldSettings(data, params);
       if (data?.unstable_plus) {
         renderManifoldTubes(data.unstable_plus as TubeArray, MANIFOLD_COLORS.unstable, scene, {
           label: "Unstable manifold (+)",
           kind: "unstable",
           sourceKey: source.familyKey,
-          serializable: { ...source, kind: "manifold", manifoldType: "unstable" },
+          serializable: { ...source, kind: "manifold", manifoldType: "unstable", manifoldSettings },
         });
       }
       if (data?.unstable_minus) {
@@ -135,7 +136,12 @@ export function executeCommand(
             label: "Unstable manifold (-)",
             kind: "unstable",
             sourceKey: source.familyKey,
-            serializable: { ...source, kind: "manifold", manifoldType: "unstable" },
+            serializable: {
+              ...source,
+              kind: "manifold",
+              manifoldType: "unstable",
+              manifoldSettings,
+            },
           },
         );
       }
@@ -144,7 +150,7 @@ export function executeCommand(
           label: "Stable manifold (+)",
           kind: "stable",
           sourceKey: source.familyKey,
-          serializable: { ...source, kind: "manifold", manifoldType: "stable" },
+          serializable: { ...source, kind: "manifold", manifoldType: "stable", manifoldSettings },
         });
       }
       if (data?.stable_minus) {
@@ -152,7 +158,7 @@ export function executeCommand(
           label: "Stable manifold (-)",
           kind: "stable",
           sourceKey: source.familyKey,
-          serializable: { ...source, kind: "manifold", manifoldType: "stable" },
+          serializable: { ...source, kind: "manifold", manifoldType: "stable", manifoldSettings },
         });
       }
       break;
@@ -202,6 +208,27 @@ export function executeCommand(
     default:
       console.warn("Unknown agent action:", action);
   }
+}
+
+function _manifoldSettings(
+  data: Record<string, unknown> | undefined,
+  params: Record<string, unknown> | undefined,
+): { nBranches: number; propagationTime: number } {
+  const source = data?._sceneSource as
+    | { manifoldSettings?: { nBranches?: number; propagationTime?: number } }
+    | undefined;
+  return {
+    nBranches:
+      source?.manifoldSettings?.nBranches ??
+      (typeof params?.n_branches === "number" ? params.n_branches : 80),
+    propagationTime:
+      source?.manifoldSettings?.propagationTime ??
+      (typeof params?.propagation_time === "number"
+        ? params.propagation_time
+        : typeof params?.t_forward === "number"
+          ? params.t_forward
+          : 3.0),
+  };
 }
 
 function _orbitLabel(params: Record<string, unknown> | undefined): string {
