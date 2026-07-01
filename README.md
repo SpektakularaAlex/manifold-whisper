@@ -80,6 +80,7 @@ ALLOWED_ORIGINS=http://localhost:5173
 Start the backend:
 ```bash
 python3 -m uvicorn main:app --reload
+kill $(lsof -ti tcp:8000) && python3 -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Backend runs at `http://localhost:8000`. On startup it loads 14,615 orbit initial conditions from the local CSV database — no internet required.

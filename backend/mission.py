@@ -8,12 +8,14 @@ import logging
 import numpy as np
 
 from cr3bp import MU, propagate
-from ic_cache import get_ic, IC_CACHE, get_mu_for_system
+from ic_cache import get_ic, IC_CACHE, get_mu_for_system, ensure_system_loaded
 from manifolds import compute_manifold
 
 logger = logging.getLogger(__name__)
 
 TU_TO_DAYS = 4.3425  # 1 non-dim TU ≈ 4.3425 days
+STABLE_MANIFOLD_COLOR = "#0066FF"
+UNSTABLE_MANIFOLD_COLOR = "#FF2200"
 
 FAMILY_COLORS = {
     "halo_L1_N":          "#FFFFFF", "halo_L1_S":          "#DDDDDD",
@@ -149,7 +151,7 @@ def _build_manifold_leg(leg: dict, mu: float, out: list, arrival: bool) -> None:
         "label":      leg.get("label", "Manifold arrival" if arrival else "Manifold departure"),
         "type":       leg["type"],
         "trajectory": traj,
-        "color":      "#4FC3F7" if is_stable else "#FF6B35",
+        "color":      STABLE_MANIFOLD_COLOR if is_stable else UNSTABLE_MANIFOLD_COLOR,
         "duration":   prop_time,
     })
 
@@ -182,23 +184,27 @@ def compute_transfer(
     arr_family_key: str,
     arr_orbit_index: int,
     mu: float = MU,
+    system: str = "earth-moon",
 ) -> dict:
     """
     Compute a manifold-guided transfer between two periodic orbits.
 
     Method:
-      1. Propagate unstable manifold of departure orbit
-      2. Propagate stable manifold of arrival orbit
+      1. Propagate unstable manifold of departure orbit forward in time
+      2. Propagate stable manifold of arrival orbit backward in time
       3. Find closest-approach pair of tube endpoints
       4. Connect with a straight free-flight arc
       5. Return color-coded segments + full concatenated trajectory
     """
-    dep_ics = IC_CACHE.get(dep_family_key)
-    arr_ics = IC_CACHE.get(arr_family_key)
+    ensure_system_loaded(system)
+    mu = get_mu_for_system(system)
+    system_cache = IC_CACHE.get(system.lower(), {})
+    dep_ics = system_cache.get(dep_family_key)
+    arr_ics = system_cache.get(arr_family_key)
     if not dep_ics:
-        raise KeyError(f"Departure family '{dep_family_key}' not found")
+        raise KeyError(f"Departure family '{dep_family_key}' not found for system '{system}'")
     if not arr_ics:
-        raise KeyError(f"Arrival family '{arr_family_key}' not found")
+        raise KeyError(f"Arrival family '{arr_family_key}' not found for system '{system}'")
 
     dep_ic = dep_ics[max(0, min(dep_orbit_index, len(dep_ics) - 1))]
     arr_ic = arr_ics[max(0, min(arr_orbit_index, len(arr_ics) - 1))]
@@ -222,14 +228,26 @@ def compute_transfer(
         n_branches=40, t_backward=t_arr,
     )
 
-    all_dep = dep_plus + dep_minus
-    all_arr = arr_plus + arr_minus
+    all_dep = [
+        {"id": f"unstable_plus_{i}", "tube": tube, "side": "plus"}
+        for i, tube in enumerate(dep_plus)
+    ] + [
+        {"id": f"unstable_minus_{i}", "tube": tube, "side": "minus"}
+        for i, tube in enumerate(dep_minus)
+    ]
+    all_arr = [
+        {"id": f"stable_plus_{i}", "tube": tube, "side": "plus"}
+        for i, tube in enumerate(arr_plus)
+    ] + [
+        {"id": f"stable_minus_{i}", "tube": tube, "side": "minus"}
+        for i, tube in enumerate(arr_minus)
+    ]
 
     # Collect tube endpoints (farthest from orbit — last point of each tube)
-    dep_ends = [(np.array(tube[-1][:3], dtype=float), tube)
-                for tube in all_dep if len(tube) >= 2]
-    arr_ends = [(np.array(tube[-1][:3], dtype=float), tube)
-                for tube in all_arr if len(tube) >= 2]
+    dep_ends = [(np.array(item["tube"][-1][:3], dtype=float), item)
+                for item in all_dep if len(item["tube"]) >= 2]
+    arr_ends = [(np.array(item["tube"][-1][:3], dtype=float), item)
+                for item in all_arr if len(item["tube"]) >= 2]
 
     if not dep_ends or not arr_ends:
         raise RuntimeError(
@@ -237,18 +255,18 @@ def compute_transfer(
 
     # Find minimum-distance pair of endpoints
     best_dist     = np.inf
-    best_dep_tube = dep_ends[0][1]
-    best_arr_tube = arr_ends[0][1]
+    best_dep_item = dep_ends[0][1]
+    best_arr_item = arr_ends[0][1]
     best_dep_end  = dep_ends[0][0]
     best_arr_end  = arr_ends[0][0]
 
-    for dep_pt, dep_tube in dep_ends:
-        for arr_pt, arr_tube in arr_ends:
+    for dep_pt, dep_item in dep_ends:
+        for arr_pt, arr_item in arr_ends:
             d = float(np.linalg.norm(dep_pt - arr_pt))
             if d < best_dist:
                 best_dist     = d
-                best_dep_tube = dep_tube
-                best_arr_tube = arr_tube
+                best_dep_item = dep_item
+                best_arr_item = arr_item
                 best_dep_end  = dep_pt
                 best_arr_end  = arr_pt
 
@@ -264,8 +282,8 @@ def compute_transfer(
     # Build trajectory arrays
     dep_orbit_xyz = propagate(dep_ic["state"], dep_T * 2, mu, n_points=300)[:, :3].tolist()
     arr_orbit_xyz = propagate(arr_ic["state"], arr_T * 2, mu, n_points=300)[:, :3].tolist()
-    dep_mfld_xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in best_dep_tube]
-    arr_mfld_xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in reversed(best_arr_tube)]
+    dep_mfld_xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in best_dep_item["tube"]]
+    arr_mfld_xyz  = [[float(p[0]), float(p[1]), float(p[2])] for p in reversed(best_arr_item["tube"])]
 
     dep_color = FAMILY_COLORS.get(dep_family_key, "#AADDFF")
     arr_color = FAMILY_COLORS.get(arr_family_key, "#FFAADD")
@@ -283,9 +301,11 @@ def compute_transfer(
         {
             "label":        "Unstable manifold",
             "trajectory":   dep_mfld_xyz,
-            "color":        "#FF2200",
+            "color":        UNSTABLE_MANIFOLD_COLOR,
             "duration_tu":  t_dep,
             "duration_days": t_dep * TU_TO_DAYS,
+            "type":         "unstable_manifold",
+            "branch_id":    best_dep_item["id"],
         },
         {
             "label":        "Transfer arc",
@@ -297,9 +317,11 @@ def compute_transfer(
         {
             "label":        "Stable manifold",
             "trajectory":   arr_mfld_xyz,
-            "color":        "#0066FF",
+            "color":        STABLE_MANIFOLD_COLOR,
             "duration_tu":  t_arr,
             "duration_days": t_arr * TU_TO_DAYS,
+            "type":         "stable_manifold",
+            "branch_id":    best_arr_item["id"],
         },
         {
             "label":        f"Arrival: {arr_label}",
@@ -321,4 +343,14 @@ def compute_transfer(
         "total_duration_tu":   total_tu,
         "total_duration_days": total_tu * TU_TO_DAYS,
         "closest_approach_lu": best_dist,
+        "closest_approach_points": {
+            "departure": best_dep_end.tolist(),
+            "arrival": best_arr_end.tolist(),
+        },
+        "departure_branch_id": best_dep_item["id"],
+        "arrival_branch_id": best_arr_item["id"],
+        "disclaimer": (
+            "Educational approximate transfer: unstable departure and stable arrival "
+            "manifold endpoints are matched by closest approach, not optimized."
+        ),
     }

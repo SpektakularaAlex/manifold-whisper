@@ -9,6 +9,8 @@ export interface TransferSegment {
   color: string;
   duration_tu: number;
   duration_days: number;
+  branch_id?: string;
+  type?: string;
 }
 
 export interface TransferResult {
@@ -17,6 +19,13 @@ export interface TransferResult {
   total_duration_tu: number;
   total_duration_days: number;
   closest_approach_lu: number;
+  closest_approach_points?: {
+    departure: [number, number, number];
+    arrival: [number, number, number];
+  };
+  departure_branch_id?: string;
+  arrival_branch_id?: string;
+  disclaimer?: string;
 }
 
 interface Props {
@@ -86,10 +95,11 @@ export function TransferPlannerPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          departure_family_key:  departure.familyKey,
+          departure_family_key: departure.familyKey,
           departure_orbit_index: departure.orbitIndex ?? 0,
-          arrival_family_key:    arrival.familyKey,
-          arrival_orbit_index:   arrival.orbitIndex ?? 0,
+          arrival_family_key: arrival.familyKey,
+          arrival_orbit_index: arrival.orbitIndex ?? 0,
+          system: "earth-moon",
         }),
       });
       if (!res.ok) {
@@ -179,11 +189,15 @@ export function TransferPlannerPanel({
           </div>
 
           <OrbitSlot label="DEPARTURE" meta={departure} />
-          <OrbitSlot label="ARRIVAL"   meta={arrival} />
+          <OrbitSlot label="ARRIVAL" meta={arrival} />
 
           <div style={{ display: "flex", gap: 8 }}>
             <button
-              onClick={() => { onClearSelection(); setResult(null); setError(null); }}
+              onClick={() => {
+                onClearSelection();
+                setResult(null);
+                setError(null);
+              }}
               style={{
                 flex: 1,
                 background: "rgba(255,255,255,0.04)",
@@ -217,7 +231,15 @@ export function TransferPlannerPanel({
           </div>
 
           {error && (
-            <div style={{ color: "#ff4444", fontSize: 10, padding: "6px 8px", background: "rgba(255,0,0,0.08)", border: "1px solid rgba(255,0,0,0.2)" }}>
+            <div
+              style={{
+                color: "#ff4444",
+                fontSize: 10,
+                padding: "6px 8px",
+                background: "rgba(255,0,0,0.08)",
+                border: "1px solid rgba(255,0,0,0.2)",
+              }}
+            >
               {error}
             </div>
           )}
@@ -250,7 +272,16 @@ export function TransferPlannerPanel({
                         flexShrink: 0,
                       }}
                     />
-                    <span style={{ flex: 1, color: "#aabbcc", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span
+                      style={{
+                        flex: 1,
+                        color: "#aabbcc",
+                        fontSize: 10,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {seg.label}
                     </span>
                     <span style={{ color: "#556677", fontSize: 10, flexShrink: 0 }}>
@@ -260,8 +291,16 @@ export function TransferPlannerPanel({
                 ))}
               </div>
 
-              <div style={{ color: "#445566", fontSize: 9, marginTop: 2 }}>
-                Closest approach: {result.closest_approach_lu.toFixed(4)} LU
+              <div style={{ color: "#aabbcc", fontSize: 10, lineHeight: 1.45, marginTop: 2 }}>
+                Closest approach:{" "}
+                <span style={{ color: "#FFB400" }}>{result.closest_approach_lu.toFixed(5)} LU</span>
+                {result.departure_branch_id && <> · dep {result.departure_branch_id}</>}
+                {result.arrival_branch_id && <> · arr {result.arrival_branch_id}</>}
+              </div>
+
+              <div style={{ color: "#778899", fontSize: 9, lineHeight: 1.45 }}>
+                {result.disclaimer ??
+                  "Educational approximate transfer, not an optimized mission trajectory."}
               </div>
             </div>
           )}

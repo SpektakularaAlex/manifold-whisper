@@ -10,7 +10,9 @@ Endpoints:
 
 import asyncio
 import logging
+import math
 import os
+from functools import partial
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -47,9 +49,9 @@ _ORBIT_COLORS: dict[str, str] = {
 }
 
 _MANIFOLD_COLORS: dict[str, str] = {
-    "unstable": "#FF6B35",
-    "stable":   "#4FC3F7",
-    "both":     "#FF6B35",   # main color; stable branches use #4FC3F7 in frontend
+    "unstable": "#FF2200",
+    "stable":   "#0066FF",
+    "both":     "#FF2200",   # main color; stable branches use blue in frontend
 }
 
 
@@ -179,6 +181,14 @@ class TransferRequest(BaseModel):
     departure_orbit_index: int = 0
     arrival_family_key: str
     arrival_orbit_index: int = 0
+    system: str = "earth-moon"
+
+class TrajectoryRequest(BaseModel):
+    system: str = "earth-moon"
+    state0: list[float]
+    t_span: float = Field(5.0, gt=0.0, le=50.0)
+    n_points: int = Field(1000, ge=50, le=5000)
+    direction: str = Field("forward", pattern="^(forward|backward)$")
 
 
 # ── /health ───────────────────────────────────────────────────────────────────
@@ -302,6 +312,39 @@ def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index
     }
 
 
+def _compute_trajectory_sync(
+    system: str,
+    state0: list[float],
+    t_span: float,
+    n_points: int,
+    direction: str,
+) -> dict:
+    if system.lower() != "earth-moon":
+        raise ValueError("Only the Earth-Moon system is supported for custom trajectories.")
+    if len(state0) != 6 or not all(math.isfinite(float(v)) for v in state0):
+        raise ValueError("state0 must contain exactly six finite numbers.")
+    if not math.isfinite(t_span) or t_span <= 0 or t_span > 50:
+        raise ValueError("t_span must be finite and in the range (0, 50].")
+    if direction not in ("forward", "backward"):
+        raise ValueError("direction must be 'forward' or 'backward'.")
+
+    mu = ic_cache.get_mu_for_system(system)
+    signed_span = -t_span if direction == "backward" else t_span
+    states = cr3bp.propagate(state0, signed_span, mu=mu, n_points=n_points)
+    trajectory = [[float(p[0]), float(p[1]), float(p[2])] for p in states]
+    full_states = [[float(v) for v in row] for row in states]
+    return {
+        "system": system,
+        "state0": [float(v) for v in state0],
+        "t_span": t_span,
+        "n_points": n_points,
+        "direction": direction,
+        "trajectory": trajectory,
+        "states": full_states,
+        "jacobi": cr3bp.jacobi_constant(state0, mu=mu),
+    }
+
+
 def _compute_manifold_sync(
     family: str, libr: int | None, branch: str | None,
     index: int, manifold_type: str,
@@ -353,6 +396,28 @@ async def orbit_endpoint(req: OrbitRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+# ── /trajectory ───────────────────────────────────────────────────────────────
+
+@app.post("/trajectory")
+async def trajectory_endpoint(req: TrajectoryRequest):
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            _compute_trajectory_sync,
+            req.system,
+            req.state0,
+            req.t_span,
+            req.n_points,
+            req.direction,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Custom trajectory propagation failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ── /manifold ─────────────────────────────────────────────────────────────────
 
 @app.post("/manifold")
@@ -395,11 +460,14 @@ async def transfer_endpoint(req: TransferRequest):
     try:
         result = await asyncio.get_event_loop().run_in_executor(
             None,
-            mission_mod.compute_transfer,
-            req.departure_family_key,
-            req.departure_orbit_index,
-            req.arrival_family_key,
-            req.arrival_orbit_index,
+            partial(
+                mission_mod.compute_transfer,
+                req.departure_family_key,
+                req.departure_orbit_index,
+                req.arrival_family_key,
+                req.arrival_orbit_index,
+                system=req.system,
+            ),
         )
         return result
     except KeyError as exc:
