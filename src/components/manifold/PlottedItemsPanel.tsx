@@ -11,8 +11,9 @@ interface Props {
   items: PlottedSceneItem[];
   scene: SceneAPI | null;
   apiUrl: string;
-  onClearAll: () => void;
+  onClearAll?: () => void;
   onSelectionChange?: (selection: SceneSelection) => void;
+  embedded?: boolean;
 }
 
 type FamilyResponse = {
@@ -29,7 +30,14 @@ function familyBaseName(familyKey: string): string {
   return familyKey.split("_")[0] ?? familyKey;
 }
 
-export function PlottedItemsPanel({ items, scene, apiUrl, onClearAll, onSelectionChange }: Props) {
+export function PlottedItemsPanel({
+  items,
+  scene,
+  apiUrl,
+  onClearAll,
+  onSelectionChange,
+  embedded = false,
+}: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [familyCache, setFamilyCache] = useState<Record<string, FamilyResponse>>({});
@@ -111,20 +119,23 @@ export function PlottedItemsPanel({ items, scene, apiUrl, onClearAll, onSelectio
   };
 
   return (
-    <aside
+    <div
       className="manifold-panel"
       style={{
-        position: "fixed",
-        top: 94,
-        right: 24,
-        width: isOpen ? 320 : 172,
-        maxHeight: isOpen ? "calc(100vh - 150px)" : 44,
-        padding: isOpen ? "10px 12px" : "8px 10px",
-        zIndex: 12,
+        position: embedded ? "relative" : "fixed",
+        top: embedded ? undefined : 94,
+        right: embedded ? undefined : 24,
+        width: embedded ? "100%" : isOpen ? 320 : 172,
+        maxHeight: embedded ? (isOpen ? 300 : 36) : isOpen ? "calc(100vh - 150px)" : 44,
+        padding: embedded ? (isOpen ? "8px 0 0" : 0) : isOpen ? "10px 12px" : "8px 10px",
+        zIndex: embedded ? undefined : 12,
         color: "#e0eeff",
         fontFamily: "'Space Mono', monospace",
         fontSize: 11,
         overflowY: "auto",
+        border: embedded ? 0 : undefined,
+        background: embedded ? "transparent" : undefined,
+        boxShadow: embedded ? "none" : undefined,
         transition: "width 0.2s ease, max-height 0.2s ease, padding 0.2s ease",
       }}
     >
@@ -140,7 +151,7 @@ export function PlottedItemsPanel({ items, scene, apiUrl, onClearAll, onSelectio
           <span>Plotted</span>
           <span>{items.length}</span>
         </button>
-        {isOpen && (
+        {isOpen && onClearAll && (
           <button
             className="manifold-icon-btn"
             title="Clear all plotted items"
@@ -365,6 +376,6 @@ export function PlottedItemsPanel({ items, scene, apiUrl, onClearAll, onSelectio
           )}
         </div>
       )}
-    </aside>
+    </div>
   );
 }

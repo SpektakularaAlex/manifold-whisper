@@ -3,6 +3,7 @@ import type { SearchEntry } from "@/data/systems";
 import {
   contentForSelection,
   EDUCATIONAL_CONTENT,
+  type EducationalContentEntry,
   type SceneSelection,
 } from "@/data/educationalContent";
 
@@ -57,7 +58,7 @@ export function InfoPanel({
     return () => clearInterval(id);
   }, [isThinking]);
 
-  const entry = useMemo(() => {
+  const entry = useMemo((): EducationalContentEntry => {
     if (conceptContent) {
       return {
         title: conceptContent.label,

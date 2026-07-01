@@ -209,7 +209,7 @@ export function useScene(
   const animFrameRef = useRef<number>(0);
 
   // Shared clock — outside the effect so animateSpacecraft can read elapsed time
-  const clockRef = useRef(new THREE.Clock());
+  const timerRef = useRef(new THREE.Timer());
 
   // Scene object refs
   const lagrangeGroupRef = useRef<THREE.Group | null>(null);
@@ -609,9 +609,10 @@ export function useScene(
     renderer.domElement.addEventListener("mousemove", onCanvasMove);
 
     // ── Render loop ────────────────────────────────────────────────────────
-    function animate() {
+    function animate(timestamp?: number) {
       animFrameRef.current = requestAnimationFrame(animate);
-      const elapsed = clockRef.current.getElapsedTime();
+      timerRef.current.update(timestamp);
+      const elapsed = timerRef.current.getElapsed();
 
       tweenUpdate();
 
@@ -637,7 +638,7 @@ export function useScene(
 
       // Spacecraft animation
       if (spacecraftActiveRef.current && spacecraftRef.current) {
-        const scElapsed = clockRef.current.getElapsedTime() - spacecraftStartRef.current;
+        const scElapsed = timerRef.current.getElapsed() - spacecraftStartRef.current;
         const path = spacecraftPathRef.current;
         const dur = spacecraftDurRef.current;
         if (path.length > 1) {
@@ -684,6 +685,7 @@ export function useScene(
       renderer.domElement.removeEventListener("click", onCanvasClick);
       renderer.domElement.removeEventListener("mousemove", onCanvasMove);
       controls.dispose();
+      timerRef.current.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       trajGroupRef.current.forEach((objects) => {
@@ -1283,7 +1285,7 @@ export function useScene(
     if (!spacecraftRef.current || path.length === 0) return;
     spacecraftPathRef.current = path;
     spacecraftDurRef.current = duration;
-    spacecraftStartRef.current = clockRef.current.getElapsedTime();
+    spacecraftStartRef.current = timerRef.current.getElapsed();
     spacecraftActiveRef.current = true;
     spacecraftRef.current.visible = true;
     spacecraftRef.current.position.set(path[0][0], path[0][1], path[0][2]);

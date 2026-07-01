@@ -18,7 +18,6 @@ import {
   type TransferResult,
 } from "@/components/manifold/TransferPlannerPanel";
 import { FamilyControlsBar } from "@/components/manifold/FamilyControlsBar";
-import { PlottedItemsPanel } from "@/components/manifold/PlottedItemsPanel";
 import {
   TrajectoryInputPanel,
   type CustomTrajectoryConfig,
@@ -41,9 +40,14 @@ import {
 } from "@/data/systems";
 import { SystemControlPanel, type VisualizeParams } from "@/components/manifold/SystemControlPanel";
 import { SearchBar } from "@/components/manifold/SearchBar";
-import { SystemMiniMap } from "@/components/manifold/SystemMiniMap";
-import { buildSavedSceneStateFromAppState, serializeSceneState } from "@/utils/sceneSerialization";
+import {
+  buildSavedSceneStateFromAppState,
+  deserializeSceneState,
+  serializeSceneState,
+  type SavedSceneStateV1,
+} from "@/utils/sceneSerialization";
 import { selectionFromTrajectory, type SceneSelection } from "@/data/educationalContent";
+import { MANIFOLD_COLORS } from "@/components/manifold/constants";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -521,6 +525,18 @@ function Index() {
     if (pinnedPreviewAnchorRef.current) closePinnedPreviews();
   }, [closePinnedPreviews]);
 
+  const clearPlottedScene = useCallback(() => {
+    sceneRef.current?.clearTrajectories();
+    setMissionActive(false);
+    setMissionLegs([]);
+    setLastOrbitMeta(null);
+    setPlannerDep(null);
+    setPlannerArr(null);
+    setActiveControlFamily(null);
+    closePinnedPreviews();
+    setSceneSelection({ type: "default" });
+  }, [closePinnedPreviews]);
+
   const handleSaveScene = useCallback(() => {
     const state = buildSavedSceneStateFromAppState({
       system: selectedSystem.id,
@@ -536,6 +552,281 @@ function Index() {
       () => setSceneKeyCopied(false),
     );
   }, [pinnedPreviewAnchor, plottedItems, selectedSystem.id]);
+
+  const handleLoadSceneKey = useCallback(
+    async (key: string): Promise<string[]> => {
+      const scene = sceneRef.current;
+      if (!scene) throw new Error("Scene is not ready yet.");
+
+      let state: SavedSceneStateV1;
+      try {
+        state = deserializeSceneState(key);
+      } catch {
+        throw new Error("Invalid scene key. Check that you copied the entire key.");
+      }
+      if (state.system !== EARTH_MOON_SYSTEM.id) {
+        throw new Error("This scene key is for a system this app does not currently load.");
+      }
+
+      clearPlottedScene();
+      setSelectedSystem(EARTH_MOON_SYSTEM);
+      setSceneTransform([0, 0, 0], 1.0);
+      scene.updateSystemBodies({
+        ...EARTH_MOON_SYSTEM.bodyConfig,
+        primaryScenePos: EARTH_MOON_SYSTEM.sceneConfig.primaryScenePos,
+        secondaryScenePos: EARTH_MOON_SYSTEM.sceneConfig.secondaryScenePos,
+      });
+      scene.updateLagrangePoints(transformedLagrangePoints(EARTH_MOON_SYSTEM));
+      scene.setBackgroundPlanets(BACKGROUND_PLANETS);
+
+      const warnings: string[] = [];
+      const loadedFamilies = new Set<string>();
+      const loadedManifolds = new Set<string>();
+
+      const familiesMeta = (await fetch(`${API_URL}/families`)
+        .then((r) => (r.ok ? r.json() : {}))
+        .catch(() => ({}))) as Record<
+        string,
+        { label?: string; color?: string; jacobi_min?: number; jacobi_max?: number }
+      >;
+
+      for (const item of state.plottedItems) {
+        try {
+          if (item.type === "family") {
+            const familyKey = item.familyKey ?? item.sourceKey ?? item.id;
+            if (!familyKey || loadedFamilies.has(familyKey)) continue;
+            loadedFamilies.add(familyKey);
+            const res = await fetch(`${API_URL}/family/${familyKey}?n=50`);
+            if (!res.ok) throw new Error(`family ${familyKey} returned ${res.status}`);
+            const data = (await res.json()) as {
+              orbits: Array<{
+                trajectory: [number, number, number][];
+                jacobi: number;
+                period_tu: number;
+                period_days: number;
+                stability: number;
+                index: number;
+              }>;
+            };
+            const meta = familiesMeta[familyKey];
+            const jacobis = data.orbits.map((orbit) => orbit.jacobi);
+            scene.addFamilyOrbits(
+              data.orbits,
+              item.color ?? meta?.color ?? "#AADDFF",
+              meta?.jacobi_min ?? Math.min(...jacobis),
+              meta?.jacobi_max ?? Math.max(...jacobis),
+              familyKey,
+            );
+            if (!item.visible) scene.setPlottedItemVisible(familyKey, false);
+            continue;
+          }
+
+          if (item.type === "orbit") {
+            const familyKey = item.familyKey ?? item.sourceKey;
+            if (!familyKey || item.orbitIndex == null) {
+              warnings.push(`${item.label ?? "Orbit"} is missing family/index data`);
+              continue;
+            }
+            const parsed = _parseFamilyKey(familyKey);
+            const res = await fetch(`${API_URL}/orbit`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...parsed,
+                index: item.orbitIndex,
+                system: EARTH_MOON_SYSTEM.id,
+              }),
+            });
+            if (!res.ok)
+              throw new Error(`orbit ${familyKey} #${item.orbitIndex + 1} returned ${res.status}`);
+            const data = (await res.json()) as {
+              trajectory: [number, number, number][];
+              period?: number;
+              jacobi?: number;
+            };
+            const id = scene.addTrajectory(
+              data.trajectory,
+              item.color ?? familiesMeta[familyKey]?.color ?? "#00FFFF",
+              item.label ?? `${familyKey} #${item.orbitIndex + 1}`,
+              {
+                family: parsed.family,
+                familyKey,
+                libr: parsed.libr,
+                branch: parsed.branch,
+                orbitIndex: item.orbitIndex,
+                period: data.period,
+                jacobi: data.jacobi,
+                itemType: "orbit",
+                sourceKey: familyKey,
+                serializable: { kind: "orbit", familyKey, orbitIndex: item.orbitIndex },
+              },
+            );
+            if (id && !item.visible) scene.setPlottedItemVisible(id, false);
+            continue;
+          }
+
+          if (item.type === "manifold") {
+            const familyKey = item.sourceFamilyKey ?? item.familyKey ?? item.sourceKey;
+            if (!familyKey || item.orbitIndex == null) {
+              warnings.push(`${item.label ?? "Manifold"} is missing source orbit data`);
+              continue;
+            }
+            const manifoldType = item.manifoldType ?? "both";
+            const key = `${familyKey}:${item.orbitIndex}:${manifoldType}`;
+            if (loadedManifolds.has(key)) continue;
+            loadedManifolds.add(key);
+            const parsed = _parseFamilyKey(familyKey);
+            const res = await fetch(`${API_URL}/manifold`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...parsed,
+                index: item.orbitIndex,
+                type: manifoldType,
+                n_branches: 20,
+                propagation_time: 3.0,
+                system: EARTH_MOON_SYSTEM.id,
+              }),
+            });
+            if (!res.ok)
+              throw new Error(
+                `manifold ${familyKey} #${item.orbitIndex + 1} returned ${res.status}`,
+              );
+            const data = (await res.json()) as Record<string, [number, number, number][][]>;
+            const ids: string[] = [];
+            if (data.unstable_plus) {
+              ids.push(
+                scene.addManifoldTubes(data.unstable_plus, MANIFOLD_COLORS.unstable, {
+                  label: "Unstable manifold (+)",
+                  kind: "unstable",
+                  sourceKey: familyKey,
+                  serializable: {
+                    kind: "manifold",
+                    manifoldType: "unstable",
+                    familyKey,
+                    sourceFamilyKey: familyKey,
+                    orbitIndex: item.orbitIndex,
+                  },
+                }),
+              );
+            }
+            if (data.unstable_minus) {
+              ids.push(
+                scene.addManifoldTubes(data.unstable_minus, MANIFOLD_COLORS.unstableMuted, {
+                  label: "Unstable manifold (-)",
+                  kind: "unstable",
+                  sourceKey: familyKey,
+                  serializable: {
+                    kind: "manifold",
+                    manifoldType: "unstable",
+                    familyKey,
+                    sourceFamilyKey: familyKey,
+                    orbitIndex: item.orbitIndex,
+                  },
+                }),
+              );
+            }
+            if (data.stable_plus) {
+              ids.push(
+                scene.addManifoldTubes(data.stable_plus, MANIFOLD_COLORS.stable, {
+                  label: "Stable manifold (+)",
+                  kind: "stable",
+                  sourceKey: familyKey,
+                  serializable: {
+                    kind: "manifold",
+                    manifoldType: "stable",
+                    familyKey,
+                    sourceFamilyKey: familyKey,
+                    orbitIndex: item.orbitIndex,
+                  },
+                }),
+              );
+            }
+            if (data.stable_minus) {
+              ids.push(
+                scene.addManifoldTubes(data.stable_minus, MANIFOLD_COLORS.stableMuted, {
+                  label: "Stable manifold (-)",
+                  kind: "stable",
+                  sourceKey: familyKey,
+                  serializable: {
+                    kind: "manifold",
+                    manifoldType: "stable",
+                    familyKey,
+                    sourceFamilyKey: familyKey,
+                    orbitIndex: item.orbitIndex,
+                  },
+                }),
+              );
+            }
+            if (!item.visible)
+              ids.filter(Boolean).forEach((id) => scene.setPlottedItemVisible(id, false));
+            continue;
+          }
+
+          if (item.type === "customTrajectory" && item.customTrajectory) {
+            const cfg = item.customTrajectory;
+            const res = await fetch(`${API_URL}/trajectory`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                system: EARTH_MOON_SYSTEM.id,
+                state0: cfg.state0,
+                t_span: cfg.tSpan,
+                n_points: cfg.nPoints,
+                direction: cfg.direction,
+              }),
+            });
+            if (!res.ok) throw new Error(`custom trajectory returned ${res.status}`);
+            const data = (await res.json()) as {
+              trajectory: [number, number, number][];
+              jacobi: number;
+            };
+            const id = scene.addTrajectory(
+              data.trajectory,
+              item.color ?? "#44FF88",
+              cfg.label ?? item.label ?? "Custom trajectory",
+              {
+                itemType: "custom-trajectory",
+                jacobi: data.jacobi,
+                sourceKey: "custom-trajectory",
+                serializable: {
+                  kind: "customTrajectory",
+                  label: cfg.label ?? item.label,
+                  state0: cfg.state0,
+                  tSpan: cfg.tSpan,
+                  nPoints: cfg.nPoints,
+                  direction: cfg.direction,
+                  jacobi: data.jacobi,
+                },
+              },
+            );
+            if (id && !item.visible) scene.setPlottedItemVisible(id, false);
+            continue;
+          }
+
+          warnings.push(
+            `${item.label ?? item.type} cannot be restored from the current scene key schema`,
+          );
+        } catch (err) {
+          warnings.push(
+            `${item.label ?? item.type}: ${err instanceof Error ? err.message : "restore failed"}`,
+          );
+        }
+      }
+
+      if (state.camera?.position && state.camera.target) {
+        scene.setCameraView(state.camera.position, state.camera.target);
+      }
+      if (state.selectedAnchor) {
+        pinnedPreviewAnchorRef.current = state.selectedAnchor;
+        setPinnedPreviewAnchor(state.selectedAnchor);
+      }
+      setSceneKey(key);
+      setSceneKeyCopied(false);
+      return warnings;
+    },
+    [clearPlottedScene],
+  );
 
   const copySceneKey = useCallback(() => {
     if (!sceneKey) return;
@@ -632,18 +923,13 @@ function Index() {
 
       <SceneControls
         onSaveScene={handleSaveScene}
-        onClearTrajectories={() => {
-          sceneRef.current?.clearTrajectories();
-          setMissionActive(false);
-          setMissionLegs([]);
-          setLastOrbitMeta(null);
-          setPlannerDep(null);
-          setPlannerArr(null);
-          closePinnedPreviews();
-          setSceneSelection({ type: "default" });
-        }}
+        onLoadSceneKey={handleLoadSceneKey}
         onToggleLabels={handleToggleLabels}
         onMission={() => setMissionOpen((prev) => !prev)}
+        plottedItems={plottedItems}
+        scene={sceneAPI}
+        apiUrl={API_URL}
+        onSelectionChange={setSceneSelection}
       />
 
       <FamilyBrowserPanel
@@ -657,28 +943,6 @@ function Index() {
         onVisualize={(params) => void handleVisualize(params)}
         isLoading={isLoading}
         lastOrbitMeta={lastOrbitMeta}
-      />
-
-      <SystemMiniMap
-        systems={ACTIVE_SYSTEMS}
-        selectedSystem={selectedSystem}
-        onSystemChange={handleSystemChange}
-      />
-
-      <PlottedItemsPanel
-        items={plottedItems}
-        scene={sceneAPI}
-        apiUrl={API_URL}
-        onSelectionChange={setSceneSelection}
-        onClearAll={() => {
-          sceneRef.current?.clearTrajectories();
-          setMissionActive(false);
-          setMissionLegs([]);
-          setPlannerDep(null);
-          setPlannerArr(null);
-          closePinnedPreviews();
-          setSceneSelection({ type: "default" });
-        }}
       />
 
       <TrajectoryInputPanel onPlot={handlePlotCustomTrajectory} />
