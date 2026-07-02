@@ -450,6 +450,117 @@
   }
 }
 
+/* ===== LANDING PAGE ===== */
+
+@keyframes landing-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.landing-root {
+  transition: opacity 0.4s ease;
+}
+
+.landing-root.exiting {
+  opacity: 0;
+}
+
+.landing-title {
+  font-family: var(--font-mono);
+  font-size: 96px;
+  color: #ffffff;
+  letter-spacing: 0.2em;
+  animation: landing-fade-in 800ms ease both;
+}
+
+.landing-subtitle {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: #00ffff;
+  letter-spacing: 0.35em;
+  margin-top: 12px;
+  animation: landing-fade-in 800ms ease both;
+}
+
+.landing-divider {
+  width: 200px;
+  height: 1px;
+  background: rgba(0, 255, 255, 0.3);
+  margin: 32px auto 0;
+  animation: landing-fade-in 800ms ease both;
+}
+
+.landing-stats {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #888888;
+  letter-spacing: 0.2em;
+  margin-top: 32px;
+  animation: landing-fade-in 800ms ease both;
+}
+
+.landing-description {
+  max-width: 480px;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  color: #aaaaaa;
+  line-height: 1.7;
+  text-align: center;
+  margin-top: 32px;
+  padding: 0 24px;
+  animation: landing-fade-in 800ms ease both;
+}
+
+.landing-btn {
+  margin-top: 48px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  padding: 14px 48px;
+  border: 1px solid rgba(0, 255, 255, 0.6);
+  background: rgba(0, 255, 255, 0.05);
+  color: #00ffff;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  animation: landing-fade-up 800ms ease both;
+}
+
+.landing-btn:hover {
+  background: rgba(0, 255, 255, 0.12);
+  border-color: rgba(0, 255, 255, 1.0);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.25);
+}
+
+.landing-attribution {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: #444444;
+  letter-spacing: 0.15em;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+@media (max-width: 600px) {
+  .landing-title {
+    font-size: 52px;
+    letter-spacing: 0.12em;
+  }
+
+  .landing-subtitle {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+}
+
 @media (max-width: 900px) and (orientation: landscape) {
   .manifold-mobile-menu-btn {
     position: fixed;
