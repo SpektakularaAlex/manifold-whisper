@@ -111,42 +111,70 @@ export function InfoPanel({
         onClick={() => setIsExpanded((prev) => !prev)}
         style={{
           appearance: "none",
-          background: "transparent",
-          border: 0,
-          padding: 0,
-          margin: 0,
+          background: isExpanded ? "rgba(0,255,255,0.05)" : "transparent",
+          border: "1px solid transparent",
+          borderRadius: 4,
+          padding: "4px 6px",
+          margin: "-4px -6px",
           textAlign: "left",
           cursor: "pointer",
           color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
         }}
         aria-expanded={isExpanded}
+        aria-controls="manifold-info-content"
+        onMouseEnter={(event) => {
+          event.currentTarget.style.borderColor = "rgba(0,255,255,0.22)";
+          event.currentTarget.style.background = "rgba(0,255,255,0.06)";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.borderColor = "transparent";
+          event.currentTarget.style.background = isExpanded ? "rgba(0,255,255,0.05)" : "transparent";
+        }}
       >
-        <div
-          className="manifold-mono"
+        <div>
+          <div
+            className="manifold-mono"
+            style={{
+              color: "var(--manifold-cyan)",
+              fontSize: 14,
+              letterSpacing: "0.4em",
+              fontWeight: 700,
+            }}
+          >
+            MANIFOLD
+          </div>
+          <div
+            style={{
+              color: "var(--manifold-text-faint)",
+              fontSize: 10,
+              letterSpacing: "0.15em",
+              marginTop: 4,
+              textTransform: "uppercase",
+            }}
+          >
+            Cislunar Dynamics Explorer
+          </div>
+        </div>
+        <span
+          aria-hidden="true"
           style={{
             color: "var(--manifold-cyan)",
-            fontSize: 14,
-            letterSpacing: "0.4em",
-            fontWeight: 700,
+            fontSize: 16,
+            lineHeight: 1,
+            transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.18s ease",
           }}
         >
-          MANIFOLD
-        </div>
-        <div
-          style={{
-            color: "var(--manifold-text-faint)",
-            fontSize: 10,
-            letterSpacing: "0.15em",
-            marginTop: 4,
-            textTransform: "uppercase",
-          }}
-        >
-          Cislunar Dynamics Explorer
-        </div>
+          ▾
+        </span>
       </button>
 
       {isExpanded && (
-        <>
+        <div id="manifold-info-content" style={{ display: "contents" }}>
           <div style={{ height: 1, background: "rgba(0,255,255,0.2)" }} />
           {selectionLabel && (
             <div
@@ -263,7 +291,7 @@ export function InfoPanel({
               <span>{suggestedNext}</span>
             </button>
           )}
-        </>
+        </div>
       )}
     </aside>
   );

@@ -40,6 +40,7 @@ import {
 } from "@/data/systems";
 import type { VisualizeParams } from "@/components/manifold/SystemControlPanel";
 import { SearchBar } from "@/components/manifold/SearchBar";
+import { randomCuratedScene } from "@/data/curatedScenes";
 import {
   buildSavedSceneStateFromAppState,
   deserializeSceneState,
@@ -53,8 +54,9 @@ import {
 } from "@/utils/scenePersistence";
 import { selectionFromTrajectory, type SceneSelection } from "@/data/educationalContent";
 import { MANIFOLD_COLORS } from "@/components/manifold/constants";
+import { API_BASE_URL, apiErrorMessage, apiUrl } from "@/utils/api";
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -556,9 +558,9 @@ function Index() {
     if (pinnedPreviewAnchorRef.current) closePinnedPreviews();
   }, [closePinnedPreviews]);
 
-  const clearPlottedScene = useCallback(() => {
+  const clearPlottedScene = useCallback((options?: { preserveAutosave?: boolean }) => {
     sceneRef.current?.clearTrajectories();
-    clearAutosavedScene();
+    if (!options?.preserveAutosave) clearAutosavedScene();
     setMissionActive(false);
     setMissionLegs([]);
     setLastOrbitMeta(null);
@@ -601,7 +603,7 @@ function Index() {
         throw new Error("This scene key is for a system this app does not currently load.");
       }
 
-      clearPlottedScene();
+      clearPlottedScene({ preserveAutosave: true });
       setSelectedSystem(EARTH_MOON_SYSTEM);
       setSceneTransform([0, 0, 0], 1.0);
       scene.updateSystemBodies({
@@ -1033,7 +1035,25 @@ function Index() {
         return null;
       }
     })();
-    if (!saved || saved.state.plottedItems.length === 0) return;
+    if (!saved || saved.state.plottedItems.length === 0) {
+      const curated = randomCuratedScene();
+      const key = serializeSceneState(curated.sceneState);
+      void handleLoadSceneKey(key)
+        .then((warnings) => {
+          setSceneKey(null);
+          setRestoreNotice(
+            warnings.length > 0
+              ? `Loaded ${curated.title} with ${warnings.length} warning(s)`
+              : curated.title,
+          );
+          window.setTimeout(() => setRestoreNotice(null), 4200);
+        })
+        .catch(() => {
+          setRestoreNotice("Could not load curated starter scene");
+          window.setTimeout(() => setRestoreNotice(null), 4200);
+        });
+      return;
+    }
     void handleLoadSceneKey(saved.sceneKey)
       .then((warnings) => {
         setRestoreNotice(
@@ -1074,7 +1094,7 @@ function Index() {
 
   const handlePlotCustomTrajectory = useCallback(
     async (config: CustomTrajectoryConfig): Promise<number> => {
-      const res = await fetch(`${API_URL}/trajectory`, {
+      const res = await fetch(apiUrl("/trajectory"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1086,8 +1106,7 @@ function Index() {
         }),
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => null)) as { detail?: string } | null;
-        throw new Error(err?.detail ?? `Trajectory request failed (${res.status})`);
+        throw new Error(await apiErrorMessage(res, "Could not plot trajectory."));
       }
       const data = (await res.json()) as {
         trajectory: [number, number, number][];

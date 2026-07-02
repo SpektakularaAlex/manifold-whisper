@@ -14,6 +14,7 @@ import math
 import os
 from functools import partial
 from contextlib import asynccontextmanager
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
@@ -185,10 +186,10 @@ class TransferRequest(BaseModel):
 
 class TrajectoryRequest(BaseModel):
     system: str = "earth-moon"
-    state0: list[float]
-    t_span: float = Field(5.0, gt=0.0, le=50.0)
-    n_points: int = Field(1000, ge=50, le=5000)
-    direction: str = Field("forward", pattern="^(forward|backward)$")
+    state0: list[Any] = Field(default_factory=list)
+    t_span: Any = 5.0
+    n_points: Any = 1000
+    direction: str = "forward"
 
 
 # ── /health ───────────────────────────────────────────────────────────────────
@@ -314,34 +315,53 @@ def _compute_orbit_sync(family: str, libr: int | None, branch: str | None, index
 
 def _compute_trajectory_sync(
     system: str,
-    state0: list[float],
-    t_span: float,
-    n_points: int,
+    state0: list[Any],
+    t_span: Any,
+    n_points: Any,
     direction: str,
 ) -> dict:
     if system.lower() != "earth-moon":
         raise ValueError("Only the Earth-Moon system is supported for custom trajectories.")
-    if len(state0) != 6 or not all(math.isfinite(float(v)) for v in state0):
+    try:
+        parsed_state0 = [float(v) for v in state0]
+    except (TypeError, ValueError):
         raise ValueError("state0 must contain exactly six finite numbers.")
-    if not math.isfinite(t_span) or t_span <= 0 or t_span > 50:
+    if len(parsed_state0) != 6 or not all(math.isfinite(v) for v in parsed_state0):
+        raise ValueError("state0 must contain exactly six finite numbers.")
+    try:
+        parsed_span = float(t_span)
+    except (TypeError, ValueError):
         raise ValueError("t_span must be finite and in the range (0, 50].")
+    try:
+        parsed_points_float = float(n_points)
+    except (TypeError, ValueError):
+        raise ValueError("n_points must be an integer in the range [50, 5000].")
+    if not math.isfinite(parsed_points_float):
+        raise ValueError("n_points must be an integer in the range [50, 5000].")
+    parsed_points = int(parsed_points_float)
+    if parsed_points != parsed_points_float:
+        raise ValueError("n_points must be an integer in the range [50, 5000].")
+    if not math.isfinite(parsed_span) or parsed_span <= 0 or parsed_span > 50:
+        raise ValueError("t_span must be finite and in the range (0, 50].")
+    if parsed_points < 50 or parsed_points > 5000:
+        raise ValueError("n_points must be an integer in the range [50, 5000].")
     if direction not in ("forward", "backward"):
         raise ValueError("direction must be 'forward' or 'backward'.")
 
     mu = ic_cache.get_mu_for_system(system)
-    signed_span = -t_span if direction == "backward" else t_span
-    states = cr3bp.propagate(state0, signed_span, mu=mu, n_points=n_points)
+    signed_span = -parsed_span if direction == "backward" else parsed_span
+    states = cr3bp.propagate(parsed_state0, signed_span, mu=mu, n_points=parsed_points)
     trajectory = [[float(p[0]), float(p[1]), float(p[2])] for p in states]
     full_states = [[float(v) for v in row] for row in states]
     return {
         "system": system,
-        "state0": [float(v) for v in state0],
-        "t_span": t_span,
-        "n_points": n_points,
+        "state0": parsed_state0,
+        "t_span": parsed_span,
+        "n_points": parsed_points,
         "direction": direction,
         "trajectory": trajectory,
         "states": full_states,
-        "jacobi": cr3bp.jacobi_constant(state0, mu=mu),
+        "jacobi": cr3bp.jacobi_constant(parsed_state0, mu=mu),
     }
 
 

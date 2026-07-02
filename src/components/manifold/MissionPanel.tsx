@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CRSystem, FamilyMeta } from "@/data/systems";
 import { FamilyPicker } from "./SystemControlPanel";
 import { MANIFOLD_COLORS } from "@/components/manifold/constants";
+import { API_BASE_URL } from "@/utils/api";
 
 export interface MissionLeg {
   label: string;
@@ -20,7 +21,7 @@ export interface BuilderLeg {
   color: string;
 }
 
-const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
+const API_URL = API_BASE_URL;
 
 const SEL: React.CSSProperties = {
   background: "rgba(0,8,14,0.9)",

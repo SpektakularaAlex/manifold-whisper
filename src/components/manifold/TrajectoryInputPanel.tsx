@@ -24,32 +24,89 @@ const DEFAULT_STATE: CustomTrajectoryConfig = {
   animate: true,
 };
 
+const STATE_FIELDS = [
+  { key: "x", label: "x", min: -1.5, max: 1.5, step: 0.001 },
+  { key: "y", label: "y", min: -1.5, max: 1.5, step: 0.001 },
+  { key: "z", label: "z", min: -0.5, max: 0.5, step: 0.001 },
+  { key: "vx", label: "vx", min: -2, max: 2, step: 0.001 },
+  { key: "vy", label: "vy", min: -2, max: 2, step: 0.001 },
+  { key: "vz", label: "vz", min: -2, max: 2, step: 0.001 },
+] as const;
+
+type StateInput = Record<(typeof STATE_FIELDS)[number]["key"], string>;
+
+const DEFAULT_STATE_INPUT: StateInput = {
+  x: "0.8",
+  y: "0",
+  z: "0",
+  vx: "0",
+  vy: "0.25",
+  vz: "0",
+};
+
+const EDITING_NUMBERS = new Set(["", "-", ".", "-."]);
+
+function parseInputValue(value: string): number | null {
+  if (EDITING_NUMBERS.has(value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseStateInput(input: StateInput): CustomTrajectoryConfig["state0"] | null {
+  const values = STATE_FIELDS.map((field) => parseInputValue(input[field.key]));
+  if (values.some((value) => value == null)) return null;
+  return values as CustomTrajectoryConfig["state0"];
+}
+
+function formatSliderValue(value: number): string {
+  return Number(value.toFixed(6)).toString();
+}
+
 export function TrajectoryInputPanel({ onPlot, embedded = false, onPreviewChange }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-  const [config, setConfig] = useState<CustomTrajectoryConfig>(DEFAULT_STATE);
+  const [config, setConfig] = useState<Omit<CustomTrajectoryConfig, "state0">>({
+    label: DEFAULT_STATE.label,
+    tSpan: DEFAULT_STATE.tSpan,
+    nPoints: DEFAULT_STATE.nPoints,
+    direction: DEFAULT_STATE.direction,
+    animate: DEFAULT_STATE.animate,
+  });
+  const [stateInput, setStateInput] = useState<StateInput>(DEFAULT_STATE_INPUT);
+  const [lastValidState, setLastValidState] =
+    useState<CustomTrajectoryConfig["state0"]>(DEFAULT_STATE.state0);
   const [error, setError] = useState<string | null>(null);
   const [lastJacobi, setLastJacobi] = useState<number | null>(null);
   const [isPlotting, setIsPlotting] = useState(false);
 
   useEffect(() => {
     const previewVisible = embedded || isOpen;
-    onPreviewChange?.(previewVisible ? config.state0 : null);
+    onPreviewChange?.(previewVisible ? lastValidState : null);
     return () => {
       onPreviewChange?.(null);
     };
-  }, [config.state0, embedded, isOpen, onPreviewChange]);
+  }, [embedded, isOpen, lastValidState, onPreviewChange]);
 
-  const updateState = (index: number, value: string) => {
-    const next = [...config.state0] as CustomTrajectoryConfig["state0"];
-    next[index] = Number(value);
-    setConfig((prev) => ({ ...prev, state0: next }));
+  const updateStateInput = (key: keyof StateInput, value: string) => {
+    setStateInput((prev) => {
+      const next = { ...prev, [key]: value };
+      const parsed = parseStateInput(next);
+      if (parsed) setLastValidState(parsed);
+      return next;
+    });
+  };
+
+  const commitStateField = (key: keyof StateInput) => {
+    const parsed = parseInputValue(stateInput[key]);
+    if (parsed == null) return;
+    setStateInput((prev) => ({ ...prev, [key]: formatSliderValue(parsed) }));
   };
 
   const handlePlot = async () => {
     setError(null);
     setLastJacobi(null);
-    if (!config.state0.every(Number.isFinite)) {
-      setError("Enter six finite state values.");
+    const parsedState = parseStateInput(stateInput);
+    if (!parsedState) {
+      setError("Enter complete finite values for x, y, z, vx, vy, and vz.");
       return;
     }
     if (!Number.isFinite(config.tSpan) || config.tSpan <= 0 || config.tSpan > 50) {
@@ -62,7 +119,7 @@ export function TrajectoryInputPanel({ onPlot, embedded = false, onPreviewChange
     }
     setIsPlotting(true);
     try {
-      const jacobi = await onPlot(config);
+      const jacobi = await onPlot({ ...config, state0: parsedState });
       if (typeof jacobi === "number") setLastJacobi(Number(jacobi.toFixed(5)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Trajectory propagation failed.");
@@ -119,19 +176,42 @@ export function TrajectoryInputPanel({ onPlot, embedded = false, onPreviewChange
             className="trajectory-state-grid"
             style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}
           >
-            {["x", "y", "z", "vx", "vy", "vz"].map((label, index) => (
-              <label key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <span style={{ color: "rgba(0,255,255,0.55)" }}>{label}</span>
-                <input
-                  className="manifold-input"
-                  type="number"
-                  step="0.001"
-                  value={config.state0[index]}
-                  onChange={(event) => updateState(index, event.target.value)}
-                  style={{ minWidth: 0, padding: "5px 6px" }}
-                />
-              </label>
-            ))}
+            {STATE_FIELDS.map((field, index) => {
+              const parsed = parseInputValue(stateInput[field.key]);
+              const sliderValue = parsed ?? lastValidState[index];
+              return (
+                <label
+                  key={field.key}
+                  style={{ display: "flex", flexDirection: "column", gap: 3 }}
+                >
+                  <span style={{ color: "rgba(0,255,255,0.55)" }}>{field.label}</span>
+                  <input
+                    className="manifold-input"
+                    type="text"
+                    inputMode="decimal"
+                    value={stateInput[field.key]}
+                    onChange={(event) => updateStateInput(field.key, event.target.value)}
+                    onBlur={() => commitStateField(field.key)}
+                    style={{ minWidth: 0, padding: "5px 6px" }}
+                    aria-label={`Initial ${field.label}`}
+                  />
+                  <input
+                    type="range"
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    value={Math.min(Math.max(sliderValue, field.min), field.max)}
+                    onChange={(event) => updateStateInput(field.key, event.target.value)}
+                    style={{
+                      width: "100%",
+                      accentColor: "var(--manifold-cyan)",
+                      minWidth: 0,
+                    }}
+                    aria-label={`Adjust ${field.label}`}
+                  />
+                </label>
+              );
+            })}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
