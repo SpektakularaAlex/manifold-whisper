@@ -236,6 +236,14 @@ VITE_API_URL=https://your-app.railway.app
 ALLOWED_ORIGINS=https://your-app.netlify.app
 ```
 
+## To publish to live version online:
+- Backend: Render, deploy manually
+- Frontent: Cloudflare:
+ ``` 
+  npm run build
+  npx wrangler deploy         
+  ```
+
 ---
 
 ## Known Limitations & Next Steps
